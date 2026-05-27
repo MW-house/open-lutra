@@ -1,0 +1,20 @@
+# docker-compose override for Dev Container
+# Develop inside the backend container and enable rclpy IntelliSense
+
+services:
+  backend:
+    # Keep the container alive in Dev Container (start uvicorn manually from the terminal)
+    command: sleep infinity
+    volumes:
+      - .:/app
+      - devcontainer-venv:/app/.venv
+      - ./cyclonedds.xml:/cyclonedds.xml:ro
+      - ./output:/data/output
+
+  # Do not start frontend when using Dev Container (avoid additional port usage)
+  frontend:
+    profiles:
+      - frontend-dev
+
+volumes:
+  devcontainer-venv:

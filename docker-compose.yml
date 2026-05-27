@@ -1,0 +1,87 @@
+# OpenLUTRA - Docker Compose (development)
+# Mounts the source code for hot-reload support
+#
+# Usage:
+#   make up       - Start the development environment (with simulator)
+#   make down     - Stop
+#   make logs     - Show logs
+#
+# Production:
+#   make prod-up  - Start production (host network)
+
+services:
+  # --- Robot Simulator (development only) ---
+  simulator:
+    build:
+      context: ./simulator
+      dockerfile: Dockerfile
+    container_name: ros2-publisher-simulator
+    environment:
+      - ROBOT_CONFIG=/app/config/simulator.yaml
+      - CYCLONEDDS_URI=file:///cyclonedds.xml
+      - SIM_MODE=${SIM_MODE:-normal}
+      - SIM_DROP_RATE=${SIM_DROP_RATE:-0.1}
+      - SIM_UNSTABLE_TOPICS=${SIM_UNSTABLE_TOPICS:-all}
+      - SIM_STOP_AFTER_SEC=${SIM_STOP_AFTER_SEC:-15}
+      - SIM_STOP_TOPICS=${SIM_STOP_TOPICS:-/robot_slave/states,/robot_master/cmd}
+      - SIM_EMPTY_CAMERA_INDICES=${SIM_EMPTY_CAMERA_INDICES:-0}
+      - SIM_EMPTY_FRAME_RATE=${SIM_EMPTY_FRAME_RATE:-0.3}
+      - SIM_BURST_INTERVAL_SEC=${SIM_BURST_INTERVAL_SEC:-10}
+      - SIM_BURST_GAP_SEC=${SIM_BURST_GAP_SEC:-2.0}
+      - SIM_BURST_COUNT=${SIM_BURST_COUNT:-50}
+    volumes:
+      - ./cyclonedds.xml:/cyclonedds.xml:ro
+      - ./config:/app/config:ro
+    profiles:
+      - sim
+    restart: unless-stopped
+
+  # --- Backend: FastAPI + ROS2 ---
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: open-lutra-backend
+    environment:
+      - CYCLONEDDS_URI=file:///cyclonedds.xml
+      - OUTPUT_DIR=/data/output
+      - ROBOT_CONFIG=${ROBOT_CONFIG:-config/simulator.yaml}
+      - HOST=0.0.0.0
+      - PORT=8000
+      - DEBUG=${DEBUG:-true}
+    command: ["bash", "-c", "source /opt/ros/humble/setup.bash && source /ros2_ws/install/setup.bash && export ROS_DOMAIN_ID=$(python3 -c \"import yaml; print(yaml.safe_load(open('${ROBOT_CONFIG:-config/simulator.yaml}')).get('ros_domain_id', 0))\") && exec uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir /app/app"]
+    volumes:
+      - ./cyclonedds.xml:/cyclonedds.xml:ro
+      - ./backend/app:/app/app
+      - ./backend/tests:/app/tests
+      - ./config:/app/config:ro
+      - ./backend/pyproject.toml:/app/pyproject.toml:ro
+      - ./output:/data/output
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+
+  # --- Frontend: Vite dev server ---
+  frontend:
+    image: node:22-slim
+    container_name: open-lutra-frontend
+    working_dir: /app
+    command: bash -c "corepack enable && pnpm install --frozen-lockfile && pnpm run dev"
+    environment:
+      - API_URL=http://backend:8000
+      - VITE_DEV_MODE=${VITE_DEV_MODE:-false}
+      # Route long-lived MJPEG streams directly to the backend origin in dev so they
+      # do not consume the Vite proxy's 6-connection-per-origin budget. See the
+      # ImagePreview comment in features/live-topics/ui/topic-details.tsx.
+      - VITE_API_BASE=${VITE_API_BASE:-http://localhost:8000}
+    volumes:
+      - ./frontend:/app
+      - frontend_node_modules:/app/node_modules
+    ports:
+      - "5173:5173"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  frontend_node_modules:

@@ -1,0 +1,77 @@
+{
+  "$schema": "https://biomejs.dev/schemas/2.4.8/schema.json",
+  "files": {
+    "includes": ["frontend/src/**", "!frontend/src/api/generated/**", "!frontend/src/routeTree.gen.ts"]
+  },
+  "css": {
+    "parser": { "tailwindDirectives": true },
+    "linter": { "enabled": false },
+    "formatter": { "enabled": false }
+  },
+  "formatter": {
+    "indentStyle": "space",
+    "indentWidth": 2,
+    "lineWidth": 120
+  },
+  "javascript": {
+    "formatter": {
+      "quoteStyle": "double",
+      "trailingCommas": "all",
+      "semicolons": "always"
+    }
+  },
+  "linter": {
+    "rules": {
+      "recommended": true,
+      "complexity": {
+        "noExcessiveCognitiveComplexity": {
+          "level": "warn",
+          "options": { "maxAllowedComplexity": 15 }
+        }
+      },
+      "style": {
+        "noNonNullAssertion": "warn",
+        "noRestrictedImports": {
+          "level": "error",
+          "options": {
+            "paths": {},
+            "patterns": [
+              {
+                "group": ["@/features/*/*"],
+                "message": "Do not import files from inside a features/ subdirectory directly. Import through the feature's barrel (@/features/<name>)."
+              }
+            ]
+          }
+        }
+      },
+      "correctness": {
+        "noUnusedImports": "error",
+        "noUnusedVariables": "error",
+        "useExhaustiveDependencies": "warn",
+        "useHookAtTopLevel": "error"
+      },
+      "a11y": {
+        "useKeyWithClickEvents": "off",
+        "noStaticElementInteractions": "off",
+        "noSvgWithoutTitle": "off",
+        "useButtonType": "warn"
+      },
+      "suspicious": {
+        "noArrayIndexKey": "warn",
+        "useBiomeIgnoreFolder": "off"
+      }
+    }
+  },
+  "overrides": [
+    {
+      "includes": ["frontend/src/__mocks__/**", "frontend/src/**/*.test.ts", "frontend/src/**/*.test.tsx"],
+      "linter": {
+        "rules": {
+          "suspicious": {
+            "useIterableCallbackReturn": "off"
+          }
+        }
+      }
+    }
+  ]
+}

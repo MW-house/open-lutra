@@ -1,0 +1,485 @@
+"""Topic monitoring service.
+
+Domain logic for real-time topic discovery, frequency monitoring, and gap
+detection. Independent of rclpy; communicates with ROS2 through the
+infrastructure layer (TopicSubscriber Protocol).
+"""
+
+from __future__ import annotations
+
+import contextlib
+import logging
+import threading
+import time
+from collections import deque
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any, Protocol
+
+from app.features.topics.models import GapRecord, TopicStats
+from app.features.topics.schemas import (
+    DiscoveredTopic,
+    TopicInfo,
+)
+from app.shared.stamp import extract_stamp_sec
+
+if TYPE_CHECKING:
+    from app.shared.log_manager import LogManager
+
+logger = logging.getLogger(__name__)
+
+# Minimum number of samples required to compute a baseline Hz.
+_BASELINE_SAMPLES = 50
+
+# ROS2 system topics excluded from discovery.
+_SYSTEM_TOPICS = frozenset({"/parameter_events", "/rosout"})
+_SYSTEM_TOPIC_PREFIXES = ("/events/",)
+
+
+class TopicSubscriber(Protocol):
+    """Interface to the rclpy node (implemented by the infrastructure layer)."""
+
+    def discover_topics(self) -> list[tuple[str, list[str]]]:
+        """Return the names and types of all topics on the DDS domain."""
+        ...
+
+    def subscribe_topic(
+        self,
+        topic_name: str,
+        msg_type_str: str,
+        callback: Callable[[str, Any], None],
+    ) -> str | None:
+        """Subscribe to a topic. Returns the QoS reliability string on success."""
+        ...
+
+    def unsubscribe_topic(self, topic_name: str) -> None:
+        """Tear down the subscription for a topic."""
+        ...
+
+    def convert_message(self, msg: Any) -> dict[str, Any]:
+        """Convert a ROS2 message into a dict."""
+        ...
+
+
+class TopicMonitorService:
+    """Domain logic for topic monitoring (rclpy-independent).
+
+    Communicates with the infrastructure layer through the TopicSubscriber
+    Protocol to track message frequencies and detect data stalls. All public
+    accessors are thread-safe.
+    """
+
+    def __init__(
+        self,
+        subscribed_topics: list[str],
+        log_manager: LogManager,
+        *,
+        gap_threshold_sec: float = 3.0,
+        buffer_size: int = 200,
+        resolve_expected_hz: Callable[[str], float | None] | None = None,
+        stamp_quality: bool = False,
+    ) -> None:
+        self._lock = threading.Lock()
+        self._subscriber: TopicSubscriber | None = None
+        self._topic_stats: dict[str, TopicStats] = {}
+        self._log_manager = log_manager
+        self._subscribed_topic_names = set(subscribed_topics)
+        self._subscribed_set: set[str] = set()
+        self._discovered_topics: dict[str, str] = {}
+        self._buffer_size = buffer_size
+        self._gap_threshold_sec = gap_threshold_sec
+        self._resolve_expected_hz = resolve_expected_hz
+        self._stamp_quality = stamp_quality
+
+        self._paused = False
+
+        self._log_manager.add("info", "Topic monitoring started")
+        logger.info("TopicMonitorService initialized; monitoring %d topics", len(subscribed_topics))
+
+    def set_subscriber(self, subscriber: TopicSubscriber) -> None:
+        """Configure the infrastructure-layer subscriber (call once at startup)."""
+        self._subscriber = subscriber
+
+    def get_topic_stats(self) -> list[TopicInfo]:
+        """Return statistics for every subscribed topic.
+
+        Refreshes caches in bulk before producing the API response.
+        Used by: GET /api/topics, GET /api/topics/stream.
+        """
+        now = time.monotonic()
+        with self._lock:
+            for s in self._topic_stats.values():
+                s.refresh_cache(now)
+            return [s.to_api() for s in self._topic_stats.values()]
+
+    def get_discovered_topics(self) -> list[DiscoveredTopic]:
+        """Return topics that have been discovered but not yet subscribed.
+
+        Used by: GET /api/topics, GET /api/topics/stream.
+        """
+        with self._lock:
+            return [
+                DiscoveredTopic(
+                    name=name,
+                    msg_type=msg_type,
+                    is_subscribed=name in self._subscribed_set,
+                )
+                for name, msg_type in self._discovered_topics.items()
+                if name not in self._subscribed_set
+            ]
+
+    def get_latest_message(self, topic_name: str) -> dict[str, Any] | None:
+        """Return the latest message for the given topic.
+
+        Does not affect the on_message hot path; instead, requests a single
+        message capture on the next receipt (on-demand mode).
+        Used by: GET /api/topics/message.
+        """
+        with self._lock:
+            stats = self._topic_stats.get(topic_name)
+            if stats is None:
+                return None
+            # Raise the capture flag (the next on_message will convert one message).
+            stats._capture_next = True
+            return stats.latest_message
+
+    def get_live_raw_image(self, topic_name: str) -> bytes:
+        """Return the latest raw frame bytes for an image topic (for MJPEG).
+
+        Used by: GET /api/topics/image/stream.
+        """
+        with self._lock:
+            stats = self._topic_stats.get(topic_name)
+            if stats is None:
+                return b""
+            return stats._live_raw_image
+
+    def is_live(self, topic_name: str) -> bool:
+        """Return whether the given topic is currently in Live mode.
+
+        Used by: GET /api/topics/image/stream.
+        """
+        with self._lock:
+            stats = self._topic_stats.get(topic_name)
+            return stats._live_mode if stats is not None else False
+
+    def start_live(self, topic_name: str) -> bool:
+        """Start Live mode for the given topic.
+
+        Used by: POST /api/topics/live/start.
+        """
+        with self._lock:
+            # Stop any existing Live session first.
+            for stats in self._topic_stats.values():
+                stats._live_mode = False
+            target = self._topic_stats.get(topic_name)
+            if target is None:
+                return False
+            target._live_mode = True
+            target._live_raw_image = b""
+            self._log_manager.add("info", f"{topic_name}: Live mode started", topic_name)
+            return True
+
+    def stop_live(self, topic_name: str) -> None:
+        """Stop Live mode.
+
+        Used by: POST /api/topics/live/stop.
+        """
+        with self._lock:
+            stats = self._topic_stats.get(topic_name)
+            if stats is None:
+                return
+            stats._live_mode = False
+            self._log_manager.add("info", f"{topic_name}: Live mode stopped", topic_name)
+
+    def get_live_positions(self, topic_name: str) -> dict[str, Any] | None:
+        """Return the sensor position array captured while in Live mode.
+
+        Used by: GET /api/topics/live/stream.
+        """
+        with self._lock:
+            stats = self._topic_stats.get(topic_name)
+            if stats is None or not stats._live_mode:
+                return None
+            if not stats._live_positions:
+                return None
+            return {
+                "positions": stats._live_positions,
+                "names": stats._live_joint_names,
+            }
+
+    def reset_baseline(self) -> None:
+        """Reset dynamically learned baseline Hz values and quality metrics.
+
+        Topics with a fixed baseline (from YAML config) keep their baseline Hz;
+        only dynamically learned topics restart learning.
+        Used by: POST /api/topics/reset-baseline.
+        """
+        with self._lock:
+            for stats in self._topic_stats.values():
+                if not stats.baseline_fixed:
+                    stats.baseline_hz = None
+                self._reset_stats_timing(stats)
+            self._log_manager.add("info", "Baseline Hz reset (dynamically learned topics will restart learning)")
+            logger.info("Baseline Hz reset (fixed baselines preserved)")
+
+    def pause(self) -> None:
+        """Pause real-time monitoring.
+
+        Skips on_message callback processing to reduce CPU load. DDS
+        subscriptions are kept open, so resume restarts immediately.
+        Used by: POST /api/topics/pause.
+        """
+        self._paused = True
+        self._log_manager.add("info", "Real-time monitoring paused")
+        logger.info("Real-time monitoring paused")
+
+    def resume(self) -> None:
+        """Resume real-time monitoring.
+
+        Resets timing-related metrics so that elapsed pause time does not
+        produce false missing-rate or gap detections (baseline_hz is kept).
+        Used by: POST /api/topics/resume.
+        """
+        with self._lock:
+            for stats in self._topic_stats.values():
+                self._reset_stats_timing(stats)
+        self._paused = False
+        self._log_manager.add("info", "Real-time monitoring resumed")
+        logger.info("Real-time monitoring resumed")
+
+    def update_subscriptions(self, topics: list[str]) -> list[str]:
+        """Dynamically update the set of subscribed topics.
+
+        Used by: PUT /api/topics/subscriptions.
+
+        Returns:
+            List of topic names currently subscribed.
+        """
+        new_set = set(topics)
+
+        with self._lock:
+            # Unsubscribe from topics that were deselected.
+            to_remove = self._subscribed_set - new_set
+            for name in to_remove:
+                if self._subscriber is not None:
+                    self._subscriber.unsubscribe_topic(name)
+                self._subscribed_set.discard(name)
+                self._topic_stats.pop(name, None)
+                self._log_manager.add("info", f"Unsubscribed from {name}", name)
+                logger.info("Unsubscribed from %s", name)
+
+            # Update the desired subscription set.
+            self._subscribed_topic_names = new_set
+
+            # Subscribe to any newly desired topics already discovered.
+            for name in new_set:
+                if name not in self._subscribed_set and name in self._discovered_topics:
+                    msg_type = self._discovered_topics[name]
+                    self._subscribe_to_topic(name, msg_type)
+
+            return sorted(self._subscribed_set)
+
+    def on_discover_tick(self) -> None:
+        """Discover all topics on the DDS domain and subscribe to new ones."""
+        if self._subscriber is None:
+            return
+        topic_names_and_types = self._subscriber.discover_topics()
+
+        with self._lock:
+            for name, types in topic_names_and_types:
+                if name in _SYSTEM_TOPICS or any(name.startswith(p) for p in _SYSTEM_TOPIC_PREFIXES):
+                    continue
+                msg_type = types[0] if types else "unknown"
+                self._discovered_topics[name] = msg_type
+
+                if name in self._subscribed_topic_names and name not in self._subscribed_set:
+                    self._subscribe_to_topic(name, msg_type)
+
+    def on_gap_check_tick(self) -> None:
+        """Periodically check for topics that have stalled."""
+        now = time.monotonic()
+        with self._lock:
+            for stats in self._topic_stats.values():
+                if stats.message_count == 0 or stats._last_msg_time == 0.0:
+                    continue
+                gap = now - stats._last_msg_time
+                if gap > self._gap_threshold_sec and stats._cached_status != "danger":
+                    self._log_manager.add(
+                        "danger",
+                        f"{stats.name}: no data for {gap:.1f}s",
+                        stats.name,
+                    )
+
+    def on_message(self, topic_name: str, msg: Any) -> None:
+        """Process an incoming message: update statistics and detect gaps.
+
+        Called at very high rates (e.g. 500Hz x 6 topics = 3000 calls/sec), so
+        keep the work performed under the lock minimal.
+
+        monotonic: used for stall detection (no message also means no stamp)
+        and window bookkeeping.
+        header.stamp: used for frequency and loss_rate computation
+        (jitter-free, accurate value).
+        """
+        if self._paused:
+            return
+        now = time.monotonic()
+
+        # Extract header.stamp (None when the message type has no header;
+        # falls back to monotonic).
+        stamp = extract_stamp_sec(msg)
+
+        with self._lock:
+            stats = self._topic_stats.get(topic_name)
+            if stats is None:
+                return
+
+            # Record the first-receive time (monotonic).
+            if stats.first_received_at is None:
+                stats.first_received_at = now
+
+            # Stall detection (monotonic-based: detects "no messages arriving").
+            if stats.message_count > 0 and stats._last_msg_time > 0:
+                gap = now - stats._last_msg_time
+                if gap > self._gap_threshold_sec:
+                    stats.total_gap_sec += gap
+                    stats.gaps.append(GapRecord(timestamp=now, duration=gap))
+                    if len(stats.gaps) > 20:
+                        stats.gaps = stats.gaps[-20:]
+                    self._log_manager.add(
+                        "danger",
+                        f"{topic_name}: detected a gap of {gap:.1f}s",
+                        topic_name,
+                    )
+
+            # Timestamp handling.
+            # _last_msg_time: stall detection (monotonic).
+            # on_stamp: Hz computation (monotonic) + dynamic learning (stamp preferred).
+            stats._last_msg_time = now
+            stats.on_stamp(now, stamp)
+            stats.message_count += 1
+            stats.tick_loss_window(now)
+
+            # Dynamic baseline-Hz learning (only when no fixed baseline is set).
+            if stats.baseline_hz is None and not stats.baseline_fixed:
+                if stats.message_count == _BASELINE_SAMPLES:
+                    stats.timestamps.clear()
+                elif stats.message_count == _BASELINE_SAMPLES * 2:
+                    stats.refresh_cache(now)
+                    stats.baseline_hz = stats._cached_actual_hz
+                    self._log_manager.add(
+                        "info",
+                        f"Baseline Hz for {topic_name}: {stats.baseline_hz:.0f}Hz (dynamic learning)",
+                        topic_name,
+                    )
+                    logger.info("Baseline Hz for %s: %.1f (dynamic learning)", topic_name, stats.baseline_hz)
+
+            # Live mode.
+            is_live = stats._live_mode
+
+            # Live mode: capture sensor position data (O(1) under the lock).
+            if is_live and not self._is_image_topic(stats.msg_type):
+                self._capture_live_positions(stats, msg)
+
+            # Image topics: always swap in the raw bytes (for MJPEG; O(1) under the lock).
+            if self._is_image_topic(stats.msg_type):
+                with contextlib.suppress(Exception):
+                    stats._live_raw_image = bytes(msg.data) if hasattr(msg, "data") else b""
+
+            # Check the on-demand capture flag (only set by API requests).
+            should_capture = stats._capture_next and self._subscriber is not None
+            if should_capture:
+                stats._capture_next = False
+
+        # Run the expensive conversion outside the lock.
+        if should_capture:
+            converted = self._subscriber.convert_message(msg)  # type: ignore[union-attr]
+            with self._lock:
+                stats = self._topic_stats.get(topic_name)
+                if stats is not None:
+                    stats.latest_message = converted
+
+    def _subscribe_to_topic(self, topic_name: str, msg_type_str: str) -> None:
+        """Create the subscription for a topic. Caller must hold the lock."""
+        if self._subscriber is None:
+            return
+
+        stats = TopicStats(
+            name=topic_name,
+            msg_type=msg_type_str,
+            timestamps=deque(maxlen=self._buffer_size),
+            is_subscribed=True,
+            _gap_threshold_sec=self._gap_threshold_sec,
+            stamp_quality=self._stamp_quality,
+        )
+
+        # Resolve the expected Hz from the YAML config (fixed baseline).
+        if self._resolve_expected_hz is not None:
+            expected_hz = self._resolve_expected_hz(topic_name)
+            if expected_hz is not None:
+                stats.baseline_hz = expected_hz
+                stats.baseline_fixed = True
+            logger.debug("Resolved expected Hz for %s: %s", topic_name, expected_hz)
+
+        self._topic_stats[topic_name] = stats
+
+        rel_str = self._subscriber.subscribe_topic(topic_name, msg_type_str, self.on_message)
+        if rel_str is None:
+            self._log_manager.add("warning", f"Cannot subscribe: unknown type {msg_type_str}", topic_name)
+            self._topic_stats.pop(topic_name, None)
+            return
+
+        self._subscribed_set.add(topic_name)
+        stats.qos_reliability = rel_str
+        hz_info = f", baseline Hz: {stats.baseline_hz:.0f}Hz (fixed)" if stats.baseline_fixed else ""
+        self._log_manager.add(
+            "info",
+            f"Subscribed to {topic_name} ({msg_type_str}, QoS: {rel_str}{hz_info})",
+            topic_name,
+        )
+        logger.info("Subscribed to %s (%s, QoS: %s)", topic_name, msg_type_str, rel_str)
+
+    @staticmethod
+    def _is_image_topic(msg_type: str) -> bool:
+        """Return whether a topic carries image data."""
+        return "Image" in msg_type
+
+    @staticmethod
+    def _capture_live_positions(stats: TopicStats, msg: Any) -> None:
+        """Extract the position array from a sensor message (run under the lock; O(1))."""
+        try:
+            # JointState: msg.position, msg.name
+            if hasattr(msg, "position") and hasattr(msg, "name"):
+                stats._live_positions = list(msg.position)
+                if not stats._live_joint_names and msg.name:
+                    stats._live_joint_names = list(msg.name)
+            # Custom types that wrap a JointState: msg.joint_state.position
+            elif hasattr(msg, "joint_state") and hasattr(msg.joint_state, "position"):
+                stats._live_positions = list(msg.joint_state.position)
+                if not stats._live_joint_names and msg.joint_state.name:
+                    stats._live_joint_names = list(msg.joint_state.name)
+        except Exception as e:
+            # Live streaming must not stop even if extracting position/name fails.
+            logger.debug("Failed to extract Live position: %s", e)
+
+    @staticmethod
+    def _reset_stats_timing(stats: TopicStats) -> None:
+        """Reset timing-related metrics."""
+        stats.message_count = 0
+        stats.timestamps.clear()
+        stats.first_received_at = None
+        stats.total_gap_sec = 0.0
+        stats.gaps.clear()
+        stats._window_start = 0.0
+        stats._window_count = 0
+        stats._last_loss_rate = 0.0
+        stats._last_msg_time = 0.0
+        stats._last_stamp = 0.0
+        stats._stamp_window_start = 0.0
+        stats._stamp_loss_count = 0
+        stats._stamp_msg_count = 0
+        stats._hz_count = 0
+        stats._hz_count_start = 0.0
+        stats._cached_actual_hz = 0.0
+        stats._cached_status = "inactive"
+        stats._capture_next = False

@@ -1,0 +1,29 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>example_robot_msgs</name>
+  <version>0.0.1</version>
+  <description>
+    Sample ROS2 message package illustrating the two custom-type patterns
+    that OpenLUTRA detects automatically: a JointState wrapped inside a
+    larger message, and a composite that bundles two JointState groups.
+    Distributed under the BSD Zero Clause License (0BSD) as part of the
+    OpenLUTRA examples.
+  </description>
+  <maintainer email="noreply@example.com">OpenLUTRA Examples</maintainer>
+  <license>BSD Zero Clause License (0BSD)</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <build_depend>rosidl_default_generators</build_depend>
+  <exec_depend>rosidl_default_runtime</exec_depend>
+
+  <depend>std_msgs</depend>
+  <depend>sensor_msgs</depend>
+
+  <member_of_group>rosidl_interface_packages</member_of_group>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

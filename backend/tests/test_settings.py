@@ -1,0 +1,205 @@
+"""Tests for application settings (Settings / RobotConfig)."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import pytest
+
+from app.settings import HzPattern, RobotConfig, Settings, _load_robot_config, get_settings
+
+# ---------------------------------------------------------------------------
+# RobotConfig
+# ---------------------------------------------------------------------------
+
+
+class TestRobotConfig:
+    """Tests for RobotConfig defaults and validation."""
+
+    def test_defaults(self) -> None:
+        """All fields have a default value defined."""
+        cfg = RobotConfig()
+        assert cfg.robot_name == "Robot"
+        assert cfg.ros_domain_id == 0
+        assert cfg.recording_discovery_timeout == 10
+        assert cfg.recording_start_delay_sec == 0.0
+        assert cfg.monitor_qos_depth == 30
+        assert cfg.default_topics == []
+        assert cfg.expected_hz_patterns == []
+        assert cfg.stamp_quality is False
+
+    def test_recording_start_delay_sec_negative_rejected(self) -> None:
+        """Negative start_delay_sec is rejected by the ge=0 constraint."""
+        with pytest.raises(ValueError):
+            RobotConfig(recording_start_delay_sec=-1.0)
+
+    def test_recording_start_delay_sec_zero_allowed(self) -> None:
+        """Zero is allowed."""
+        cfg = RobotConfig(recording_start_delay_sec=0.0)
+        assert cfg.recording_start_delay_sec == 0.0
+
+    def test_recording_start_delay_sec_positive(self) -> None:
+        """Positive values are preserved as-is."""
+        cfg = RobotConfig(recording_start_delay_sec=2.5)
+        assert cfg.recording_start_delay_sec == 2.5
+
+
+class TestResolveExpectedHz:
+    """Tests for RobotConfig.resolve_expected_hz()."""
+
+    def test_no_patterns(self) -> None:
+        """No patterns returns None."""
+        cfg = RobotConfig()
+        assert cfg.resolve_expected_hz("/foo") is None
+
+    def test_glob_match(self) -> None:
+        """Returns the Hz of the first matching glob pattern."""
+        cfg = RobotConfig(
+            expected_hz_patterns=[
+                HzPattern(pattern="**/compressed", hz=30.0),
+                HzPattern(pattern="/joint/*", hz=200.0),
+            ]
+        )
+        assert cfg.resolve_expected_hz("/cam/image/compressed") == 30.0
+        assert cfg.resolve_expected_hz("/joint/state") == 200.0
+
+    def test_first_match_wins(self) -> None:
+        """When multiple patterns match, the first one takes precedence."""
+        cfg = RobotConfig(
+            expected_hz_patterns=[
+                HzPattern(pattern="/foo/*", hz=10.0),
+                HzPattern(pattern="/foo/bar", hz=20.0),
+            ]
+        )
+        assert cfg.resolve_expected_hz("/foo/bar") == 10.0
+
+    def test_dynamic_learning_returns_none_hz(self) -> None:
+        """A pattern with hz explicitly set to None returns None (dynamic learning)."""
+        cfg = RobotConfig(expected_hz_patterns=[HzPattern(pattern="/sensor/*", hz=None)])
+        assert cfg.resolve_expected_hz("/sensor/imu") is None
+
+    def test_no_match(self) -> None:
+        """No match returns None."""
+        cfg = RobotConfig(expected_hz_patterns=[HzPattern(pattern="/foo/*", hz=30.0)])
+        assert cfg.resolve_expected_hz("/bar") is None
+
+
+# ---------------------------------------------------------------------------
+# _load_robot_config
+# ---------------------------------------------------------------------------
+
+
+class TestLoadRobotConfig:
+    """Tests for _load_robot_config()."""
+
+    def test_loads_yaml(self, tmp_path: Path) -> None:
+        """Loads a valid YAML file."""
+        yaml_path = tmp_path / "robot.yaml"
+        yaml_path.write_text(
+            """
+robot_name: TestBot
+ros_domain_id: 7
+recording_discovery_timeout: 5
+recording_start_delay_sec: 1.5
+default_topics:
+  - /joint
+expected_hz_patterns:
+  - pattern: "**/compressed"
+    hz: 30
+""",
+            encoding="utf-8",
+        )
+        cfg = _load_robot_config(str(yaml_path))
+        assert cfg.robot_name == "TestBot"
+        assert cfg.ros_domain_id == 7
+        assert cfg.recording_discovery_timeout == 5
+        assert cfg.recording_start_delay_sec == 1.5
+        assert cfg.default_topics == ["/joint"]
+        assert cfg.expected_hz_patterns[0].pattern == "**/compressed"
+        assert cfg.expected_hz_patterns[0].hz == 30.0
+
+    def test_missing_file_raises(self, tmp_path: Path) -> None:
+        """Raises FileNotFoundError when the file does not exist."""
+        with pytest.raises(FileNotFoundError):
+            _load_robot_config(str(tmp_path / "nonexistent.yaml"))
+
+
+# ---------------------------------------------------------------------------
+# Settings
+# ---------------------------------------------------------------------------
+
+
+class TestSettings:
+    """Tests for the Settings class."""
+
+    def test_robot_uses_default_when_yaml_missing(self, tmp_path: Path) -> None:
+        """Returns the default RobotConfig when the YAML file does not exist."""
+        s = Settings(robot_config=str(tmp_path / "missing.yaml"))
+        robot = s.robot
+        assert robot.robot_name == "Robot"
+        assert robot.ros_domain_id == 0
+
+    def test_robot_loads_yaml(self, tmp_path: Path) -> None:
+        """Loads the YAML file when one is present."""
+        yaml_path = tmp_path / "robot.yaml"
+        yaml_path.write_text(
+            "robot_name: MyBot\nros_domain_id: 99\nrecording_start_delay_sec: 2.0\n",
+            encoding="utf-8",
+        )
+        s = Settings(robot_config=str(yaml_path))
+        assert s.robot.robot_name == "MyBot"
+        assert s.robot.ros_domain_id == 99
+
+    def test_robot_is_cached(self, tmp_path: Path) -> None:
+        """The robot property is loaded only on first access (cached)."""
+        yaml_path = tmp_path / "robot.yaml"
+        yaml_path.write_text("robot_name: Cached\n", encoding="utf-8")
+        s = Settings(robot_config=str(yaml_path))
+        first = s.robot
+        second = s.robot
+        assert first is second  # Same instance
+
+    def test_property_passthroughs(self, tmp_path: Path) -> None:
+        """Each property returns the corresponding RobotConfig value."""
+        yaml_path = tmp_path / "robot.yaml"
+        yaml_path.write_text(
+            """
+robot_name: PropTest
+ros_domain_id: 42
+recording_discovery_timeout: 8
+recording_start_delay_sec: 3.5
+monitor_qos_depth: 50
+default_topics:
+  - /a
+  - /b
+stamp_quality: true
+expected_hz_patterns:
+  - pattern: "/a"
+    hz: 100
+""",
+            encoding="utf-8",
+        )
+        s = Settings(robot_config=str(yaml_path))
+        assert s.robot_name == "PropTest"
+        assert s.ros_domain_id == 42
+        assert s.recording_discovery_timeout == 8
+        assert s.recording_start_delay_sec == 3.5
+        assert s.monitor_qos_depth == 50
+        assert s.default_topics == ["/a", "/b"]
+        assert s.stamp_quality is True
+
+    def test_recording_start_delay_sec_default(self, tmp_path: Path) -> None:
+        """Defaults to 0.0 when not specified in YAML."""
+        yaml_path = tmp_path / "robot.yaml"
+        yaml_path.write_text("robot_name: Foo\n", encoding="utf-8")
+        s = Settings(robot_config=str(yaml_path))
+        assert s.recording_start_delay_sec == 0.0
+
+
+class TestGetSettings:
+    """Tests for get_settings()."""
+
+    def test_returns_settings_instance(self) -> None:
+        """Returns a Settings instance."""
+        s = get_settings()
+        assert isinstance(s, Settings)

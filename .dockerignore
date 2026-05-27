@@ -1,0 +1,41 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv
+venv
+ENV
+.mypy_cache
+.pytest_cache
+.ruff_cache
+*.egg-info
+dist
+build
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# Project specific
+.local
+output
+*.mcap
+.env
+
+# Documentation
+*.md
+!README.md
+
+# Frontend (built separately)
+frontend
+
+# Tests (not needed in production)
+tests

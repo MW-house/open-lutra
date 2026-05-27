@@ -1,0 +1,39 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+
+# Tools
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Environment
+.env
+
+# Output
+output/
+
+# Local docs & data
+.local/
+
+# IDE (exclude personal settings only; .vscode/settings.json is shared)
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+
+# Frontend
+node_modules/
+frontend/dist/
+frontend/coverage/
+frontend/src/routeTree.gen.ts
+frontend/.pnpm-store/
+
+# Dev Container (dynamically generated file)
+.devcontainer/docker-compose.claude.yml
+
+# OS
+.DS_Store

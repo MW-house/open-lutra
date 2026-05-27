@@ -1,0 +1,19 @@
+# Linux production override - enables network_mode: host for ROS2 DDS discovery
+#
+# With `docker compose -f ...`, an `environment` block in list form overrides the base,
+# so use the map form to merge with the base.
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+
+services:
+  backend:
+    network_mode: host
+    environment:
+      CYCLONEDDS_URI: ""  # Disable the dev-only manual peer setting (host network uses multicast auto-discovery)
+      DEBUG: "false"
+
+  frontend:
+    command: bash -c "corepack enable && { [ -d node_modules/.vite ] || pnpm install --frozen-lockfile; }; pnpm run dev"
+    extra_hosts:
+      - "backend:host-gateway"  # Host resolution for reaching the backend container on the host network

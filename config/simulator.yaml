@@ -1,0 +1,47 @@
+# Robot configuration (default: simulator)
+#
+# Set ROBOT_CONFIG=config/simulator.yaml in .env to use this file.
+# Use it as a template for a physical robot: copy to e.g. config/myrobot.yaml,
+# adjust ros_domain_id / topic names / expected Hz / stamp_quality /
+# recording_start_delay_sec, then repoint ROBOT_CONFIG at the new file.
+
+robot_name: RobotSimulator
+ros_domain_id: 0
+recording_discovery_timeout: 10
+monitor_qos_depth: 30
+
+# Compute live-quality missing_rate based on header.stamp.
+# - true:  detect loss accurately from stamp intervals. Use this for a physical
+#          robot, whose stamps typically have very low jitter.
+# - false: compute by count (received / expected). Use this for simulators,
+#          whose stamps include OS timer jitter.
+stamp_quality: false
+
+# Additional wait (seconds) after DDS discovery completes before SPACE is sent
+# to actually start recording. RealSense camera drivers and similar can have
+# ~1s lag between subscribe confirmation and the first frame; a non-zero value
+# waits for publisher ramp-up to eliminate the blank period at the start of
+# recordings. Leave at 0 for simulators; set to e.g. 2.0 for physical robots
+# with slow-starting camera drivers.
+recording_start_delay_sec: 0
+
+# Default topics to record (pre-selected in the UI)
+default_topics:
+  - /right_arm_depth_cam/color/image_raw/compressed
+  - /right_arm_depth_cam_2/color/image_raw/compressed
+  - /left_arm_depth_cam/color/image_raw/compressed
+  - /left_arm_depth_cam_2/color/image_raw/compressed
+  - /robot_master/cmd
+  - /robot_slave/states
+
+# Expected Hz for quality monitoring (pattern match, first match wins).
+# Omit `hz` to enable dynamic learning (auto-computed from message intervals
+# after subscribe). Example:
+#   - pattern: "/sensor/*"   # no hz: dynamically learned
+expected_hz_patterns:
+  - pattern: "**/compressed"
+    hz: 30
+  - pattern: "/robot_master/*"
+    hz:
+  - pattern: "/robot_slave/*"
+    hz: 100

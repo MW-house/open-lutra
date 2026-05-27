@@ -1,0 +1,81 @@
+{
+	// --- Python ---
+	"[python]": {
+		"editor.defaultFormatter": "charliermarsh.ruff",
+		"editor.formatOnSave": true,
+		"editor.codeActionsOnSave": {
+			"source.fixAll.ruff": "always",
+			"source.organizeImports.ruff": "always"
+		},
+		"editor.rulers": [120]
+	},
+	"python.analysis.typeCheckingMode": "off",
+	"python.analysis.diagnosticSeverityOverrides": {
+		"reportMissingImports": "none"
+	},
+	"flake8.enabled": false,
+	"pylint.enabled": false,
+
+	// --- TypeScript / Frontend (Biome) ---
+	"[typescript]": {
+		"editor.defaultFormatter": "biomejs.biome",
+		"editor.formatOnSave": true,
+		"editor.codeActionsOnSave": {
+			"source.fixAll.biome": "always",
+			"source.organizeImports.biome": "always",
+			"source.fixAll.tailwindCSS": "always"
+		}
+	},
+	"[typescriptreact]": {
+		"editor.defaultFormatter": "biomejs.biome",
+		"editor.formatOnSave": true,
+		"editor.codeActionsOnSave": {
+			"source.fixAll.biome": "always",
+			"source.organizeImports.biome": "always",
+			"source.fixAll.tailwindCSS": "always"
+		}
+	},
+	"[css]": {
+		"editor.defaultFormatter": "biomejs.biome",
+		"editor.formatOnSave": true
+	},
+	"[json]": {
+		"editor.defaultFormatter": "biomejs.biome",
+		"editor.formatOnSave": true
+	},
+	"[jsonc]": {
+		"editor.defaultFormatter": "biomejs.biome",
+		"editor.formatOnSave": true
+	},
+	"css.lint.unknownAtRules": "ignore",
+	"biome.lsp.bin": "frontend/node_modules/@biomejs/cli-darwin-arm64/biome",
+	"tailwindCSS.lint.suggestCanonicalClasses": "warning",
+	"cSpell.enabled": false,
+
+	// --- Vitest ---
+	// terminalシェルで起動し、各開発者のnodeバージョン管理(nodenv/asdf等)を正しく反映する
+	"vitest.shellType": "terminal",
+	"vitest.vitestPackagePath": "./frontend/node_modules/vitest",
+
+	// --- General ---
+	"editor.tabSize": 2,
+	"files.trimTrailingWhitespace": true,
+	"files.insertFinalNewline": true,
+
+	// --- Search / Explorer ---
+	"files.exclude": {
+		"**/__pycache__": true,
+		"**/.mypy_cache": true,
+		"**/.pytest_cache": true,
+		"**/.ruff_cache": true,
+		"**/node_modules": true
+	},
+	"search.exclude": {
+		"**/dist": true,
+		"**/coverage": true,
+		"**/.local": true,
+		"**/uv.lock": true,
+		"**/package-lock.json": true,
+		"frontend/src/api/generated": true
+	}
+}

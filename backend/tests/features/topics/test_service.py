@@ -1,0 +1,477 @@
+"""Unit tests for TopicMonitorService.
+
+Mocks the TopicSubscriber Protocol so that the domain logic
+can be tested without depending on rclpy.
+"""
+
+import time
+from unittest.mock import MagicMock
+
+from app.features.topics.service import TopicMonitorService
+from app.shared.log_manager import LogManager
+
+
+class _NoHeaderMsg:
+    """Mock message for which extract_stamp_sec returns None."""
+
+
+def _mock_msg() -> _NoHeaderMsg:
+    return _NoHeaderMsg()
+
+
+# ---------------------------------------------------------------------------
+# Initialization
+# ---------------------------------------------------------------------------
+
+
+class TestInit:
+    """Initialization tests for TopicMonitorService."""
+
+    def test_initial_state(self, monitor: TopicMonitorService) -> None:
+        """Initial state has empty stats."""
+        assert monitor.get_topic_stats() == []
+        assert monitor.get_discovered_topics() == []
+
+    def test_init_logs_startup(self, log_manager: LogManager) -> None:
+        """A log entry is recorded at initialization."""
+        TopicMonitorService(subscribed_topics=[], log_manager=log_manager)
+        logs, total = log_manager.get_logs()
+        assert total >= 1
+        assert any("Topic monitoring started" in log.message for log in logs)
+
+
+# ---------------------------------------------------------------------------
+# on_discover_tick
+# ---------------------------------------------------------------------------
+
+
+class TestOnDiscoverTick:
+    """Tests for on_discover_tick()."""
+
+    def test_discovers_and_subscribes(self, monitor: TopicMonitorService, mock_subscriber: MagicMock) -> None:
+        """A discovered topic that is in the subscribe list is subscribed to."""
+        mock_subscriber.discover_topics.return_value = [
+            ("/joint_states", ["sensor_msgs/msg/JointState"]),
+        ]
+        monitor.on_discover_tick()
+
+        # subscribe was called
+        mock_subscriber.subscribe_topic.assert_called_once()
+        assert len(monitor.get_topic_stats()) == 1
+
+    def test_ignores_system_topics(self, monitor: TopicMonitorService, mock_subscriber: MagicMock) -> None:
+        """System topics (/rosout, /parameter_events) are ignored."""
+        mock_subscriber.discover_topics.return_value = [
+            ("/rosout", ["rcl_interfaces/msg/Log"]),
+            ("/parameter_events", ["rcl_interfaces/msg/ParameterEvent"]),
+            ("/events/something", ["std_msgs/msg/String"]),
+        ]
+        monitor.on_discover_tick()
+        mock_subscriber.subscribe_topic.assert_not_called()
+
+    def test_discovers_non_subscribed_topics(self, monitor: TopicMonitorService, mock_subscriber: MagicMock) -> None:
+        """Topics that are not in the subscribe list are added to discovered_topics."""
+        mock_subscriber.discover_topics.return_value = [
+            ("/camera/image", ["sensor_msgs/msg/Image"]),
+        ]
+        monitor.on_discover_tick()
+        discovered = monitor.get_discovered_topics()
+        assert len(discovered) == 1
+        assert discovered[0].name == "/camera/image"
+        assert discovered[0].is_subscribed is False
+
+    def test_subscribe_failure_logged(
+        self, monitor: TopicMonitorService, mock_subscriber: MagicMock, log_manager: LogManager
+    ) -> None:
+        """If subscribe fails, it is logged and not added to stats."""
+        mock_subscriber.subscribe_topic.return_value = None  # Failure
+        mock_subscriber.discover_topics.return_value = [
+            ("/joint_states", ["unknown/msg/Type"]),
+        ]
+        monitor.on_discover_tick()
+        assert len(monitor.get_topic_stats()) == 0
+        logs, _ = log_manager.get_logs()
+        assert any("Cannot subscribe" in log.message for log in logs)
+
+    def test_no_subscriber_noop(self, log_manager: LogManager) -> None:
+        """Does nothing when the subscriber is not set."""
+        service = TopicMonitorService(subscribed_topics=[], log_manager=log_manager)
+        service.on_discover_tick()  # No exception raised
+
+
+# ---------------------------------------------------------------------------
+# on_message
+# ---------------------------------------------------------------------------
+
+
+class TestOnMessage:
+    """Tests for on_message()."""
+
+    def _setup_subscribed(self, monitor: TopicMonitorService, mock_subscriber: MagicMock) -> None:
+        """Helper that puts the topic into a subscribed state."""
+        mock_subscriber.discover_topics.return_value = [
+            ("/joint_states", ["sensor_msgs/msg/JointState"]),
+        ]
+        monitor.on_discover_tick()
+
+    def test_message_count_increments(self, monitor: TopicMonitorService, mock_subscriber: MagicMock) -> None:
+        """Message receipt increments the counter."""
+        self._setup_subscribed(monitor, mock_subscriber)
+        monitor.on_message("/joint_states", _mock_msg())
+        stats = monitor.get_topic_stats()
+        assert stats[0].message_count == 1
+
+    def test_unknown_topic_ignored(self, monitor: TopicMonitorService) -> None:
+        """Messages on unregistered topics are ignored."""
+        monitor.on_message("/unknown_topic", _mock_msg())
+        assert monitor.get_topic_stats() == []
+
+    def test_gap_detection(
+        self, monitor: TopicMonitorService, mock_subscriber: MagicMock, log_manager: LogManager
+    ) -> None:
+        """A gap exceeding the threshold is detected and logged (gap below the danger threshold)."""
+        self._setup_subscribed(monitor, mock_subscriber)
+
+        # Establish the ok state with multiple messages
+        for _ in range(5):
+            monitor.on_message("/joint_states", _mock_msg())
+
+        stats_dict = monitor._topic_stats
+        topic_stats = stats_dict["/joint_states"]
+        # Slightly over gap_threshold_sec (3.5 s); raise the threshold so it does not flip to danger
+        topic_stats._gap_threshold_sec = 100.0  # Prevents status from going to danger
+        monitor._gap_threshold_sec = 3.0  # Service-side gap detection threshold stays at 3 s
+
+        # Shift the last message time back by 3.5 s
+        topic_stats._last_msg_time = time.monotonic() - 3.5
+
+        # Next message -> gap detection (not danger, so not reset)
+        monitor.on_message("/joint_states", _mock_msg())
+
+        logs, _ = log_manager.get_logs()
+        assert any("detected a gap" in log.message for log in logs)
+
+    def test_danger_to_ok_resets_metrics(self, monitor: TopicMonitorService, mock_subscriber: MagicMock) -> None:
+        """A gap is recorded when recovering from danger to ok."""
+        self._setup_subscribed(monitor, mock_subscriber)
+        stats = monitor._topic_stats["/joint_states"]
+
+        # Receive messages to bump the count
+        for _ in range(10):
+            monitor.on_message("/joint_states", _mock_msg())
+        assert stats.message_count == 10
+
+        # Create the danger state (set _last_msg_time to an old value)
+        stats._last_msg_time = time.monotonic() - 5.0
+        stats.refresh_cache(time.monotonic())
+        assert stats.status == "danger"
+
+        # Next message recovers to ok -> a gap is recorded
+        monitor.on_message("/joint_states", _mock_msg())
+        stats.refresh_cache(time.monotonic())
+        assert stats.status == "ok"
+        assert stats.total_gap_sec > 0.0  # 5-s gap is recorded
+
+    def test_gaps_truncated_to_20(self, monitor: TopicMonitorService, mock_subscriber: MagicMock) -> None:
+        """Gap records are truncated to the most recent 20."""
+        self._setup_subscribed(monitor, mock_subscriber)
+        stats = monitor._topic_stats["/joint_states"]
+
+        for _ in range(25):
+            # Simulate a large gap between each message
+            monitor.on_message("/joint_states", _mock_msg())
+            stats._last_msg_time = time.monotonic() - 5.0  # Set to 5 s ago
+
+        # Final gap detected on the last message
+        monitor.on_message("/joint_states", _mock_msg())
+
+        assert len(stats.gaps) <= 20
+
+    def test_baseline_hz_learned(
+        self, monitor: TopicMonitorService, mock_subscriber: MagicMock, log_manager: LogManager
+    ) -> None:
+        """Baseline Hz is auto-learned after the warmup (50 messages) and 50 more learning messages."""
+        self._setup_subscribed(monitor, mock_subscriber)
+        # Warmup (50) + learning (50) = 100 messages
+        for _ in range(100):
+            monitor.on_message("/joint_states", _mock_msg())
+
+        stats = monitor.get_topic_stats()
+        assert stats[0].baseline_hz is not None
+        logs, _ = log_manager.get_logs()
+        assert any("Baseline Hz" in log.message for log in logs)
+
+    def test_baseline_not_learned_during_warmup(self, monitor: TopicMonitorService, mock_subscriber: MagicMock) -> None:
+        """Baseline Hz is not learned during warmup (the first 50 messages)."""
+        self._setup_subscribed(monitor, mock_subscriber)
+        for _ in range(50):
+            monitor.on_message("/joint_states", _mock_msg())
+
+        stats = monitor.get_topic_stats()
+        assert stats[0].baseline_hz is None
+
+    def test_latest_message_updated(self, monitor: TopicMonitorService, mock_subscriber: MagicMock) -> None:
+        """latest_message is updated on message receipt (1 in every 10)."""
+        self._setup_subscribed(monitor, mock_subscriber)
+        # Enable _capture_next then send once
+        stats = monitor._topic_stats["/joint_states"]
+        stats._capture_next = True
+        monitor.on_message("/joint_states", _mock_msg())
+        msg = monitor.get_latest_message("/joint_states")
+        assert msg is not None
+
+
+# ---------------------------------------------------------------------------
+# on_gap_check_tick
+# ---------------------------------------------------------------------------
+
+
+class TestOnGapCheckTick:
+    """Tests for on_gap_check_tick()."""
+
+    def test_skips_topic_with_no_messages(
+        self, monitor: TopicMonitorService, mock_subscriber: MagicMock, log_manager: LogManager
+    ) -> None:
+        """Topics with message_count=0 are skipped."""
+        mock_subscriber.discover_topics.return_value = [
+            ("/joint_states", ["sensor_msgs/msg/JointState"]),
+        ]
+        monitor.on_discover_tick()
+        # Run gap_check without any messages -> skipped
+        monitor.on_gap_check_tick()
+        logs, _ = log_manager.get_logs()
+        assert not any("no data" in log.message for log in logs)
+
+    def test_skips_topic_with_no_last_received(
+        self, monitor: TopicMonitorService, mock_subscriber: MagicMock, log_manager: LogManager
+    ) -> None:
+        """Skipped when message_count > 0 but _last_msg_time is 0."""
+        mock_subscriber.discover_topics.return_value = [
+            ("/joint_states", ["sensor_msgs/msg/JointState"]),
+        ]
+        monitor.on_discover_tick()
+        # Manually set message_count; _last_msg_time stays at 0 (defensive coding)
+        stats = monitor._topic_stats["/joint_states"]
+        stats.message_count = 5
+
+        monitor.on_gap_check_tick()
+        logs, _ = log_manager.get_logs()
+        assert not any("no data" in log.message for log in logs)
+
+    def test_logs_stale_non_danger_topic(
+        self, monitor: TopicMonitorService, mock_subscriber: MagicMock, log_manager: LogManager
+    ) -> None:
+        """Only stale topics whose status is not danger are logged."""
+        mock_subscriber.discover_topics.return_value = [
+            ("/joint_states", ["sensor_msgs/msg/JointState"]),
+        ]
+        monitor.on_discover_tick()
+        monitor.on_message("/joint_states", _mock_msg())
+
+        stats = monitor._topic_stats["/joint_states"]
+        # Create a gap longer than service._gap_threshold_sec (3.0) while keeping
+        # stats._gap_threshold_sec large enough that the status judgment does not become danger
+        stats._gap_threshold_sec = 100.0
+        stats._last_msg_time = time.monotonic() - 4.0
+        stats.refresh_cache(time.monotonic())
+
+        monitor.on_gap_check_tick()
+        logs, _ = log_manager.get_logs()
+        gap_check_logs = [log for log in logs if "no data" in log.message]
+        assert len(gap_check_logs) == 1
+
+    def test_dedup_already_danger_topic(
+        self, monitor: TopicMonitorService, mock_subscriber: MagicMock, log_manager: LogManager
+    ) -> None:
+        """Topics already in the danger state suppress duplicate logs."""
+        mock_subscriber.discover_topics.return_value = [
+            ("/joint_states", ["sensor_msgs/msg/JointState"]),
+        ]
+        monitor.on_discover_tick()
+        for _ in range(5):
+            monitor.on_message("/joint_states", _mock_msg())
+
+        stats = monitor._topic_stats["/joint_states"]
+        stats._last_msg_time = time.monotonic() - 4.0
+        stats.refresh_cache(time.monotonic())
+
+        # status=danger, so no log is recorded
+        monitor.on_gap_check_tick()
+        logs, _ = log_manager.get_logs()
+        gap_check_logs = [log for log in logs if "no data" in log.message]
+        assert gap_check_logs == []
+
+
+# ---------------------------------------------------------------------------
+# update_subscriptions
+# ---------------------------------------------------------------------------
+
+
+class TestUpdateSubscriptions:
+    """Tests for update_subscriptions()."""
+
+    def test_add_new_topic(self, monitor: TopicMonitorService, mock_subscriber: MagicMock) -> None:
+        """A new topic is added."""
+        # Discover first
+        mock_subscriber.discover_topics.return_value = [
+            ("/camera/image", ["sensor_msgs/msg/Image"]),
+        ]
+        monitor.on_discover_tick()
+        # Update the subscribe list
+        result = monitor.update_subscriptions(["/joint_states", "/camera/image"])
+        assert "/camera/image" in result
+
+    def test_remove_topic(self, monitor: TopicMonitorService, mock_subscriber: MagicMock) -> None:
+        """A topic is unsubscribed."""
+        mock_subscriber.discover_topics.return_value = [
+            ("/joint_states", ["sensor_msgs/msg/JointState"]),
+        ]
+        monitor.on_discover_tick()
+        assert len(monitor.get_topic_stats()) == 1
+
+        # Drop /joint_states
+        result = monitor.update_subscriptions([])
+        assert "/joint_states" not in result
+        assert len(monitor.get_topic_stats()) == 0
+        mock_subscriber.unsubscribe_topic.assert_called_with("/joint_states")
+
+
+# ---------------------------------------------------------------------------
+# get_latest_message
+# ---------------------------------------------------------------------------
+
+
+class TestSubscribeWithoutSubscriber:
+    """Subscribe behavior tests when no subscriber is set."""
+
+    def test_update_subscriptions_without_subscriber(self, log_manager: LogManager) -> None:
+        """update_subscriptions still works (no exceptions) when the subscriber is unset."""
+        service = TopicMonitorService(subscribed_topics=[], log_manager=log_manager)
+        # Manually register a topic into _discovered_topics (discovery is impossible without a subscriber)
+        service._discovered_topics["/camera/image"] = "sensor_msgs/msg/Image"
+        result = service.update_subscriptions(["/camera/image"])
+        # Without a subscriber, no subscription is created
+        assert "/camera/image" not in result
+        assert len(service.get_topic_stats()) == 0
+
+
+class TestGetLatestMessage:
+    """Tests for get_latest_message()."""
+
+    def test_returns_none_for_unknown_topic(self, monitor: TopicMonitorService) -> None:
+        assert monitor.get_latest_message("/unknown") is None
+
+
+class TestResetBaseline:
+    """Tests for reset_baseline()."""
+
+    def _setup_with_baseline(self, monitor: TopicMonitorService, mock_subscriber: MagicMock) -> None:
+        """Helper that puts the topic in a state where the baseline Hz has been learned."""
+        mock_subscriber.discover_topics.return_value = [
+            ("/joint_states", ["sensor_msgs/msg/JointState"]),
+        ]
+        monitor.on_discover_tick()
+        # Warmup (50) + learning (50) = 100 messages
+        for _ in range(100):
+            monitor.on_message("/joint_states", _mock_msg())
+
+    def test_resets_baseline_hz(self, monitor: TopicMonitorService, mock_subscriber: MagicMock) -> None:
+        """baseline_hz is reset to None."""
+        self._setup_with_baseline(monitor, mock_subscriber)
+        stats = monitor.get_topic_stats()
+        assert stats[0].baseline_hz is not None
+
+        monitor.reset_baseline()
+        stats = monitor.get_topic_stats()
+        assert stats[0].baseline_hz is None
+
+    def test_resets_counters(self, monitor: TopicMonitorService, mock_subscriber: MagicMock) -> None:
+        """message_count, loss_rate, etc. are reset."""
+        self._setup_with_baseline(monitor, mock_subscriber)
+        monitor.reset_baseline()
+        stats = monitor.get_topic_stats()
+        assert stats[0].message_count == 0
+        assert stats[0].loss_rate == 0.0
+
+    def test_relearns_after_reset(self, monitor: TopicMonitorService, mock_subscriber: MagicMock) -> None:
+        """After reset, 100 messages (warmup 50 + learning 50) re-learn the baseline Hz."""
+        self._setup_with_baseline(monitor, mock_subscriber)
+        monitor.reset_baseline()
+        for _ in range(100):
+            monitor.on_message("/joint_states", _mock_msg())
+        stats = monitor.get_topic_stats()
+        assert stats[0].baseline_hz is not None
+
+    def test_logs_reset(
+        self, monitor: TopicMonitorService, mock_subscriber: MagicMock, log_manager: LogManager
+    ) -> None:
+        """A log entry is written when reset."""
+        self._setup_with_baseline(monitor, mock_subscriber)
+        monitor.reset_baseline()
+        logs, _ = log_manager.get_logs()
+        assert any("reset" in log.message.lower() for log in logs)
+
+
+class TestPauseResume:
+    """Tests for pause() / resume()."""
+
+    def test_pause_skips_on_message(self, monitor: TopicMonitorService, mock_subscriber: MagicMock) -> None:
+        """on_message is skipped while paused."""
+        mock_subscriber.discover_topics.return_value = [
+            ("/joint_states", ["sensor_msgs/msg/JointState"]),
+        ]
+        monitor.on_discover_tick()
+        monitor.on_message("/joint_states", _mock_msg())
+        assert monitor.get_topic_stats()[0].message_count == 1
+
+        monitor.pause()
+        monitor.on_message("/joint_states", _mock_msg())
+        assert monitor.get_topic_stats()[0].message_count == 1  # No increment
+
+    def test_resume_restores_on_message(self, monitor: TopicMonitorService, mock_subscriber: MagicMock) -> None:
+        """After resume, on_message is processed normally again."""
+        mock_subscriber.discover_topics.return_value = [
+            ("/joint_states", ["sensor_msgs/msg/JointState"]),
+        ]
+        monitor.on_discover_tick()
+        monitor.pause()
+        monitor.on_message("/joint_states", _mock_msg())
+
+        monitor.resume()
+        monitor.on_message("/joint_states", _mock_msg())
+        assert monitor.get_topic_stats()[0].message_count == 1
+
+    def test_resume_clears_metrics_but_keeps_baseline(
+        self, monitor: TopicMonitorService, mock_subscriber: MagicMock
+    ) -> None:
+        """On resume, timing metrics are reset but baseline_hz is preserved."""
+        mock_subscriber.discover_topics.return_value = [
+            ("/joint_states", ["sensor_msgs/msg/JointState"]),
+        ]
+        monitor.on_discover_tick()
+        # Lock in the baseline Hz with warmup + learning
+        for _ in range(100):
+            monitor.on_message("/joint_states", _mock_msg())
+        baseline = monitor.get_topic_stats()[0].baseline_hz
+        assert baseline is not None
+
+        monitor.pause()
+        monitor.resume()
+
+        stats = monitor.get_topic_stats()[0]
+        assert stats.baseline_hz == baseline  # Preserved
+        assert stats.message_count == 0  # reset
+        assert stats.loss_rate == 0.0  # reset
+
+    def test_pause_logs(self, monitor: TopicMonitorService, log_manager: LogManager) -> None:
+        """A log entry is written on pause."""
+        monitor.pause()
+        logs, _ = log_manager.get_logs()
+        assert any("paused" in log.message.lower() for log in logs)
+
+    def test_resume_logs(self, monitor: TopicMonitorService, log_manager: LogManager) -> None:
+        """A log entry is written on resume."""
+        monitor.pause()
+        monitor.resume()
+        logs, _ = log_manager.get_logs()
+        assert any("resumed" in log.message.lower() for log in logs)
