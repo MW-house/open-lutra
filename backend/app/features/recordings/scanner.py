@@ -7,6 +7,9 @@ import logging
 import re
 from pathlib import Path
 
+# Import the constant directly (not via the package __init__) to avoid eagerly
+# importing the export writer's pandas/numpy stack at recordings-scan time.
+from app.features.lerobot_export.exports import EXPORTS_DIRNAME
 from app.features.recordings.meta import read_recording_meta
 from app.features.recordings.schemas import FileEntry
 from app.features.upload.cache import load_state as load_upload_state
@@ -43,7 +46,10 @@ def scan_output_dir(output_dir: Path) -> list[FileEntry]:
 
     entries: list[FileEntry] = []
     for item in items:
-        if not item.is_dir() or item.name == ".DS_Store":
+        # Skip the reserved exports directory (generated datasets, not recordings).
+        # Note: only this exact name is excluded — recording folders may legitimately
+        # start with `_`/`.` (task names are unsanitized), and must stay visible.
+        if not item.is_dir() or item.name == ".DS_Store" or item.name == EXPORTS_DIRNAME:
             continue
         entry = _build_recording_entry(item, output_dir)
         if entry is not None:
@@ -140,7 +146,7 @@ def collect_recent_task_names(output_dir: Path) -> list[str]:
     candidates: list[tuple[float, str]] = []
     for item in items:
         try:
-            if not item.is_dir() or item.name == ".DS_Store":
+            if not item.is_dir() or item.name == ".DS_Store" or item.name == EXPORTS_DIRNAME:
                 continue
 
             meta = read_recording_meta(item)

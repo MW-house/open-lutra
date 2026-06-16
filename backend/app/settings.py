@@ -6,7 +6,7 @@ settings come from a YAML file (RECORDING_CONFIG).
 
 import fnmatch
 from pathlib import Path
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field
@@ -66,6 +66,14 @@ class RecordingConfig(BaseModel):
     stamp_quality: bool = Field(
         default=False,
         description="Compute live-quality loss_rate based on header.stamp (intended for real hardware)",
+    )
+    lerobot_export: dict[str, Any] | None = Field(
+        default=None,
+        description=(
+            "LeRobot export mapping for this robot (images / observation / action / fps / ...). "
+            "When omitted, the recording cannot be exported to a LeRobot dataset. "
+            "See the `lerobot_export` section in config/simulator.yaml for the schema."
+        ),
     )
 
     def resolve_expected_hz(self, topic_name: str) -> float | None:
