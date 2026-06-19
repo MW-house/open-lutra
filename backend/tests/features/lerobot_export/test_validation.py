@@ -16,8 +16,8 @@ from app.features.lerobot_export.validation import (
 def _config() -> ExportConfig:
     return ExportConfig(
         images={"cam": "/img"},
-        observation={"state": [SourceConfig(topic="/state")]},
-        action=[SourceConfig(topic="/cmd")],
+        observation={"state": [SourceConfig(topic="/state", field="position", type="list", indices=[0])]},
+        action=[SourceConfig(topic="/cmd", field="position", type="list", indices=[0])],
     )
 
 
@@ -42,7 +42,9 @@ def test_read_recorded_topic_counts_missing_file(tmp_path: Path) -> None:
 
 
 def test_read_recorded_topic_counts_unparseable(tmp_path: Path) -> None:
-    tmp_path.joinpath("metadata.yaml").write_text("rosbag2_bagfile_information:\n  topics_with_message_count: [", "utf-8")
+    tmp_path.joinpath("metadata.yaml").write_text(
+        "rosbag2_bagfile_information:\n  topics_with_message_count: [", "utf-8"
+    )
     assert read_recorded_topic_counts(tmp_path) == {}
 
 

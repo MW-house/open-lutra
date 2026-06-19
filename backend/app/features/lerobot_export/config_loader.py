@@ -16,6 +16,8 @@ from app.settings import get_settings
 if TYPE_CHECKING:
     from app.settings import RecordingConfig
 
+_VALID_FIELD_TYPES = ("list", "number", "struct")
+
 
 def has_active_config(recording: RecordingConfig | None = None) -> bool:
     """Return True if the active recording config declares a `lerobot_export` mapping."""
@@ -75,10 +77,26 @@ def parse_config(data: dict[str, Any]) -> ExportConfig:
 
 
 def _parse_source(source: dict[str, Any]) -> SourceConfig:
+    for required in ("topic", "type"):
+        if required not in source:
+            raise ValueError(f"Source {source.get('topic', '?')!r} must specify {required!r}")
+    field_type = source["type"]
+    if field_type not in _VALID_FIELD_TYPES:
+        raise ValueError(
+            f"Source {source['topic']!r}: type {field_type!r} is invalid; must be one of {_VALID_FIELD_TYPES}"
+        )
+    if field_type in ("list", "number") and "field" not in source:
+        raise ValueError(f"Source {source['topic']!r}: type {field_type!r} requires 'field'")
+    if field_type == "list" and "indices" not in source:
+        raise ValueError(f"Source {source['topic']!r}: type 'list' requires 'indices'")
+    if field_type == "struct" and "keys" not in source:
+        raise ValueError(f"Source {source['topic']!r}: type 'struct' requires 'keys'")
     return SourceConfig(
         topic=source["topic"],
         field=source.get("field"),
+        type=field_type,
         indices=source.get("indices"),
+        keys=source.get("keys"),
         names=source.get("names"),
         interpolation=source.get("interpolation", "linear"),
     )

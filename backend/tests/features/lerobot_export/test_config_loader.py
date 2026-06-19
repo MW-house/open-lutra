@@ -9,8 +9,8 @@ _VALID = {
     "fps": 20,
     "robot_type": "demo",
     "images": {"cam": "/img"},
-    "observation": {"state": [{"topic": "/state", "field": "position"}]},
-    "action": [{"topic": "/cmd", "field": "position", "interpolation": "nearest"}],
+    "observation": {"state": [{"topic": "/state", "field": "position", "type": "list", "indices": [0, 1]}]},
+    "action": [{"topic": "/cmd", "field": "position", "type": "list", "indices": [0, 1], "interpolation": "nearest"}],
 }
 
 
@@ -45,17 +45,41 @@ def test_parse_config_missing_key(missing: str) -> None:
         parse_config(data)
 
 
-def test_parse_config_invalid_time_range() -> None:
-    with pytest.raises(ValueError, match="time_range"):
-        parse_config({**_VALID, "time_range": "middle"})
+def test_parse_source_missing_field_raises() -> None:
+    data = {**_VALID, "action": [{"topic": "/cmd", "type": "list", "indices": [0]}]}
+    with pytest.raises(ValueError, match="'field'"):
+        parse_config(data)
 
 
-def test_parse_config_observation_not_a_mapping() -> None:
-    # Structural error (observation is a list) must normalize to ValueError, not 500.
-    with pytest.raises(ValueError, match="Malformed"):
-        parse_config({**_VALID, "observation": [{"topic": "/state"}]})
+def test_parse_source_missing_type_raises() -> None:
+    data = {**_VALID, "action": [{"topic": "/cmd", "field": "position", "indices": [0]}]}
+    with pytest.raises(ValueError, match="'type'"):
+        parse_config(data)
 
 
-def test_parse_config_source_missing_topic() -> None:
-    with pytest.raises(ValueError, match="Malformed"):
-        parse_config({**_VALID, "action": [{"field": "position"}]})
+def test_parse_source_invalid_type_raises() -> None:
+    data = {**_VALID, "action": [{"topic": "/cmd", "field": "position", "type": "vector", "indices": [0]}]}
+    with pytest.raises(ValueError, match="vector"):
+        parse_config(data)
+
+
+def test_parse_source_list_without_indices_raises() -> None:
+    data = {**_VALID, "action": [{"topic": "/cmd", "field": "position", "type": "list"}]}
+    with pytest.raises(ValueError, match="indices"):
+        parse_config(data)
+
+
+def test_parse_source_struct_without_keys_raises() -> None:
+    data = {**_VALID, "action": [{"topic": "/cmd", "field": "pose.position", "type": "struct"}]}
+    with pytest.raises(ValueError, match="keys"):
+        parse_config(data)
+
+
+def test_parse_source_keys_stored() -> None:
+    data = {
+        **_VALID,
+        "action": [{"topic": "/cmd", "field": "pose.position", "type": "struct", "keys": ["x", "y", "z"]}],
+    }
+    config = parse_config(data)
+    assert config.action[0].keys == ["x", "y", "z"]
+    assert config.action[0].type == "struct"
