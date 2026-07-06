@@ -165,30 +165,31 @@ A table view of each topic's quality.
 
 ### Loss Rate chart (MCAP detail page)
 
-The **QUALITY ANALYTICS** tab on `/recordings/:folder` renders a per-topic loss% time series with uPlot. The Y axis is inverted (0% on top = stable); the warn/danger threshold lines (2% / 5%) match the rest of the quality visualization (see [Quality status determination](#quality-status-determination)).
+The **QUALITY ANALYTICS** tab on `/recordings/:folder` renders a per-topic loss% time series with uPlot. The Y axis is inverted (0% on top = stable); the warn/danger threshold lines (2% / 5%) match the rest of the quality visualization (see [Quality status determination](#quality-status-determination)). The axis keeps a `[0, 10]%` window for the common near-zero case and auto-expands when a topic runs far below its rate, so a large sustained deficit stays on-screen.
 
-**Input**: `TimelineGap` records produced by `TimelineAnalyzer` — gaps whose inter-message interval exceeds `max(Q3 + 1.5 × IQR, expected_interval × 1.5)`. Each gap carries `start_sec`, `end_sec`, `lost_count`, and `severity` (`minor` / `major`).
+**Input**: per-topic timeline bins produced by `TimelineAnalyzer`. Each bin carries `count` (received) and `expected` (frames expected in the bin); `expected` already reflects the configured `expected_hz` when set (see [Baseline Hz](#baseline-hz)).
 
-**Algorithm**: 1-second sliding window with a 0.1-second step, centered on each sample point.
+**Algorithm**: count-based deficit over a 1-second sliding window with a 0.1-second step, centered on each sample point.
 
 Each sample point `x = i × STEP_SEC` represents the loss% inside the window `[x − WINDOW_SEC/2, x + WINDOW_SEC/2)` centered on `x`:
 
 ```
-expected_per_window = expected_hz × WINDOW_SEC
-lost_in_window      = Σ gap.lost_count   # over every gap where gap.end_sec > x − WINDOW_SEC/2 ∧ gap.start_sec < x + WINDOW_SEC/2
-loss_rate(x)        = min(100, lost_in_window / expected_per_window × 100)
+received_in_window = Σ bin.count      # over bins overlapping the window
+expected_in_window = Σ bin.expected
+loss_rate(x)       = min(100, max(0, 1 − received_in_window / expected_in_window) × 100)
 ```
+
+This mirrors the per-topic `loss_rate` in the quality report, so a stream running steadily below its configured rate shows a sustained plateau here (e.g., a 100 Hz-configured topic delivering ~72 Hz plots a flat ~28% line) — not just the discrete IQR dropouts. Those dropouts remain visible as the `minor` / `major` counts and as gap markers on the Timeline heatmap.
 
 | Parameter | Value | Role |
 |---|---|---|
-| `WINDOW_SEC` | 1.0 s | Aggregation-window width. Determines the denominator (`expected_hz × WINDOW_SEC` = frames expected in one window), so the 2% / 5% thresholds keep the same meaning as the rest of the quality stack. |
-| `STEP_SEC` | 0.1 s | Spacing between sample points. The worst-case offset between a loss event and the nearest sample point is `STEP_SEC / 2 = 0.05 s`. |
+| `WINDOW_SEC` | 1.0 s | Aggregation-window width. The denominator (`Σ bin.expected ≈ expected_hz × WINDOW_SEC`) keeps the 2% / 5% thresholds meaningful across the quality stack. |
+| `STEP_SEC` | 0.1 s | Spacing between sample points. |
 
 **How to read the chart**:
 
-- **A single loss appears as a ~1-second-wide "bump"**: the center of the bump corresponds to when the loss occurred. Example: a single-frame loss at `t = 15.9 s` on a 30 Hz topic plots as a 10-point plateau across `x ∈ {15.5, 15.6, …, 16.3, 16.4}` at `1 / (30 × 1.0) × 100 ≈ 3.3%`.
-- **Time-axis precision is ±0.05 s** (= `STEP_SEC / 2`).
-- **Losses that fall inside the same window stack additively**: their `lost_count` values are summed, producing a single taller bump rather than two separate bumps.
+- **A steady under-rate appears as a sustained plateau** at the deficit level (received vs expected).
+- **A localized dropout appears as a ~1-second-wide "bump"** centered on when it occurred (its bins fall short for the windows overlapping them).
 
 Implementation: `frontend/src/features/quality-timeline/loss-rate-utils.ts`.
 
@@ -198,6 +199,7 @@ Implementation: `frontend/src/features/quality-timeline/loss-rate-utils.ts`.
 |---|---|
 | Implementation | `MCAPAnalyzer` (mcap Python library) |
 | Data source | All message timestamps inside the MCAP file |
+| Expected Hz | Config-declared `expected_hz_patterns` value when the topic matches; otherwise the nearest standard frequency estimated from message intervals |
 | Accuracy | More accurate than real-time monitoring (uses the full data, not an approximation) |
 | Persistence | Saved as `quality_report.json` in the same directory as the MCAP (cache) |
 | Execution | Runs in the background via `asyncio.to_thread()` (does not block the UI) |
@@ -260,7 +262,7 @@ expected_hz_patterns:
 | Fixed (YAML config) | Keeps `baseline_hz`. Only resets timing-related metrics |
 | Dynamic learning | Sets `baseline_hz` back to `None` and restarts learning (50 warm-up + 50 accumulation) |
 
-**Scope**: `expected_hz_patterns` is only referenced by live monitoring (Phase 2). Post-recording MCAP analysis (Phase 3) does not use YAML values; instead, it statistically re-estimates from timestamps (see [How MCAP analysis works](#how-mcap-analysis-works)).
+**Scope**: `expected_hz_patterns` is referenced by both live monitoring (Phase 2) and post-recording MCAP analysis (Phase 3). In Phase 3 a matching `hz` overrides the auto-estimated expected Hz for that topic — it becomes the topic's `expected_frequency_hz` and drives the loss-rate denominator, the gap/loss detection thresholds, and the timeline's expected Hz. Topics with no matching `hz` (pattern omitted or `hz:` left blank) fall back to statistical re-estimation from timestamps (see [How MCAP analysis works](#how-mcap-analysis-works)).
 
 ### Loss rate
 
