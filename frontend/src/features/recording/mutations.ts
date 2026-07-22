@@ -5,13 +5,14 @@
  */
 import { MutationObserver } from "@tanstack/react-query";
 import { getGetQualityQueryKey } from "@/api/generated/analysis/analysis";
+import { getGetConfigQueryKey } from "@/api/generated/config/config";
 import {
   getGetRecordingStatusQueryKey,
   startRecording as startRecordingApi,
   stopRecording as stopRecordingApi,
 } from "@/api/generated/recording/recording";
 import { getGetRecordingsQueryKey } from "@/api/generated/recordings/recordings";
-import type { FilesResponse } from "@/api/generated/schemas";
+import type { ConfigResponse, FilesResponse } from "@/api/generated/schemas";
 import { useSettingsStore } from "@/features/settings";
 import type { LogEntry } from "@/hooks/use-topics-stream";
 import { queryClient } from "@/lib/query-client";
@@ -40,8 +41,17 @@ function addLog(severity: "info" | "warning" | "danger", message: string) {
 /** Start-recording mutation. */
 export const startRecordingMutation = new MutationObserver(queryClient, {
   mutationFn: (topics: string[]) => {
-    const taskName = useSettingsStore.getState().taskName;
-    return startRecordingApi({ topics, task_name: taskName || null });
+    const { taskName, metadata } = useSettingsStore.getState();
+    // Drop sticky metadata whose field is no longer in the active config (e.g. after
+    // switching RECORDING_CONFIG) so orphaned localStorage values are not silently
+    // attached to every recording. Falls back to the raw map if config is not cached yet.
+    const config = queryClient.getQueryData<{ data: ConfigResponse }>(getGetConfigQueryKey())?.data;
+    const activeMetadata = config
+      ? Object.fromEntries(
+          Object.entries(metadata).filter(([key]) => config.metadata_fields.some((f) => f.key === key)),
+        )
+      : metadata;
+    return startRecordingApi({ topics, task_name: taskName || null, metadata: activeMetadata });
   },
   onMutate: () => {
     useRecordingStore.setState({ isStarting: true });

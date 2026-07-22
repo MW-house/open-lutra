@@ -5,12 +5,15 @@ settings come from a YAML file (RECORDING_CONFIG).
 """
 
 import fnmatch
+import logging
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+logger = logging.getLogger(__name__)
 
 
 class ValidatorEntry(BaseModel):
@@ -41,6 +44,48 @@ class HzPattern(BaseModel):
     hz: float | None = None
 
 
+class MetadataFieldOption(BaseModel):
+    """A single selectable value for a pre-registered metadata field.
+
+    `value` is stored in recording_meta.json; `label` is the display text
+    shown in the UI and falls back to `value` when omitted.
+    """
+
+    value: str
+    label: str | None = None
+
+
+class MetadataField(BaseModel):
+    """A pre-registered metadata field defined by the master config.
+
+    Operators set a value before recording; the value is written into each
+    recording's recording_meta.json under `metadata` (always as a string, so
+    e.g. a zero-padded operator ID like "007" keeps its leading zeros).
+
+    `type` selects the input control:
+      - "select": pick a value from `options` (required for this type).
+      - "number": free numeric input restricted to digits (still stored as a
+        string, preserving leading zeros).
+      - "text":   free text input.
+    `pattern` is an optional regex the value must match (used to flag invalid
+    input in the UI). `placeholder` is an optional input hint.
+    """
+
+    key: str
+    label: str
+    type: Literal["select", "number", "text"] = "select"
+    pattern: str | None = None
+    placeholder: str | None = None
+    options: list[MetadataFieldOption] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _warn_select_without_options(self) -> "MetadataField":
+        """Warn (without blocking) when a select field declares no options."""
+        if self.type == "select" and not self.options:
+            logger.warning("metadata_fields: select field %r has no options; it will render empty.", self.key)
+        return self
+
+
 class RecordingConfig(BaseModel):
     """Structure of the YAML recording configuration file."""
 
@@ -63,6 +108,7 @@ class RecordingConfig(BaseModel):
     default_topics: list[str] = Field(default_factory=list)
     expected_hz_patterns: list[HzPattern] = Field(default_factory=list)
     validators: list[ValidatorEntry] = Field(default_factory=list)
+    metadata_fields: list[MetadataField] = Field(default_factory=list)
     stamp_quality: bool = Field(
         default=False,
         description="Compute live-quality loss_rate based on header.stamp (intended for real hardware)",
@@ -210,6 +256,11 @@ class Settings(BaseSettings):
     def stamp_quality(self) -> bool:
         """Whether to compute live-quality loss_rate based on header.stamp."""
         return self.recording.stamp_quality
+
+    @property
+    def metadata_fields(self) -> list[MetadataField]:
+        """Master-defined metadata fields offered before recording."""
+        return self.recording.metadata_fields
 
 
 def get_settings() -> Settings:
