@@ -33,6 +33,17 @@ const FIELDS: ConfigResponse["metadata_fields"] = [
       { value: "cup", label: "cup" },
     ],
   },
+  {
+    key: "task_evaluation",
+    label: "Task evaluation",
+    type: "select",
+    pattern: null,
+    placeholder: null,
+    options: [
+      { value: "success", label: "成功" },
+      { value: "failure", label: "失敗" },
+    ],
+  },
 ];
 
 function makeConfig(metadata_fields: ConfigResponse["metadata_fields"]): ConfigResponse {
@@ -66,7 +77,16 @@ describe("RecordingMetadataPanel", () => {
   it("shows the set-field count on the trigger", () => {
     useSettingsStore.setState({ metadata: { operator_id: "007" } });
     render(<RecordingMetadataPanel />);
+    // Post-recording fields (task_evaluation) are excluded, so the denominator is 2, not 3.
     expect(screen.getByText("Metadata 1/2")).toBeInTheDocument();
+  });
+
+  it("excludes task_evaluation (entered from the completion banner)", () => {
+    render(<RecordingMetadataPanel />);
+    fireEvent.click(screen.getByRole("button"));
+
+    expect(screen.getByLabelText("Target Object")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Task evaluation")).not.toBeInTheDocument();
   });
 
   it("renders a select field with master options and updates the store on selection", () => {

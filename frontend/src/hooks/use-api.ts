@@ -185,10 +185,15 @@ export function useUpdateRecordingMeta() {
 // On-demand queries (used by specific screens / actions)
 // ============================================================
 
-/** Fetch the list of recording folders directly under the output directory. */
-export function useFiles() {
+/** Fetch the list of recording folders directly under the output directory.
+ *
+ * Pass `enabled` to fetch only while the caller needs it (e.g. the completion
+ * banner only reads the list while a recording has just finished).
+ */
+export function useFiles(options?: { enabled?: boolean }) {
   return useGetRecordings<FilesResponse>({
     query: {
+      enabled: options?.enabled ?? true,
       select: (resp) => resp.data as FilesResponse,
     },
   });

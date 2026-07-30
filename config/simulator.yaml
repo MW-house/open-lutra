@@ -81,20 +81,126 @@ expected_hz_patterns:
 #   - text:   free text input.
 # `pattern` is an optional regex the value must match (invalid input is flagged
 # in the UI). `placeholder` is an optional input hint.
+#
+# Fields below are the MW pilot master. Each select option follows the master
+# convention "{prefix}{3-digit id}_{name}": the stored `value` is the stable
+# code ("A000") and the `label` is the human display ("A000_フェイスタオル").
+# The code stays ASCII/language-independent in recording_meta.json, while the
+# name/category master is resolved from this config. Prefixes: A=object,
+# B=object condition, C=initial placement, D=operation.
 metadata_fields:
-  - key: operator_id          # stable key stored in recording_meta.json
-    label: "Operator ID"      # display label shown in the UI
-    type: number              # digits only, kept as a string ("007" stays "007")
-    pattern: '^[0-9]+$'       # optional: reject anything but digits
-    placeholder: "e.g. 007"   # optional: input hint
-  - key: target_object
-    label: "Target Object"
-    type: select              # pick from the options below
-    options:                  # allowed values (select-only)
-      - value: box
-        label: "Box"          # optional; falls back to `value` when omitted
-      - value: cup
-      - value: bottle
+  # A. Object being handled.
+  - key: object
+    label: "対象物"
+    type: select
+    options:
+      - value: A000
+        label: "A000_フェイスタオル"
+      - value: A001
+        label: "A001_バスタオル"
+      - value: A002
+        label: "A002_Tシャツ"
+      - value: A003
+        label: "A003_下着"
+      - value: A004
+        label: "A004_靴下"
+      - value: A005
+        label: "A005_長ズボン"
+      - value: A006
+        label: "A006_ジーンズ"
+      - value: A007
+        label: "A007_子供服"
+      - value: A008
+        label: "A008_スウェット"
+
+  # B. Condition of the object.
+  - key: object_condition
+    label: "対象物状態"
+    type: select
+    options:
+      - value: B000
+        label: "B000_乾燥"
+      - value: B001
+        label: "B001_湿り"
+      - value: B002
+        label: "B002_シワあり"
+      - value: B003
+        label: "B003_裏返し"
+
+  # C. Initial placement of the object.
+  - key: initial_placement
+    label: "初期配置"
+    type: select
+    options:
+      - value: C000
+        label: "C000_平置き"
+      - value: C001
+        label: "C001_山積み"
+      - value: C002
+        label: "C002_洗濯カゴ"
+      - value: C003
+        label: "C003_絡まり"
+
+  # D. Operation performed.
+  - key: operation
+    label: "操作"
+    type: select
+    options:
+      - value: D000
+        label: "D000_片手で持ち上げる"
+      - value: D001
+        label: "D001_両手で保持する"
+      - value: D002
+        label: "D002_端を探す"
+      - value: D003
+        label: "D003_角を探す"
+      - value: D004
+        label: "D004_振る"
+      - value: D005
+        label: "D005_広げる"
+      - value: D006
+        label: "D006_シワを伸ばす"
+      - value: D007
+        label: "D007_表裏を反転する"
+      - value: D008
+        label: "D008_向きを揃える"
+      - value: D009
+        label: "D009_広がった状態から洗濯物を畳む"
+      - value: D010
+        label: "D010_畳んだ衣類を置く"
+      - value: D011
+        label: "D011_同種を積む"
+      - value: D012
+        label: "D012_崩れないように整列する"
+      - value: D013
+        label: "D013_Short Task"
+      - value: D014
+        label: "D014_End-to-End"
+      - value: D015
+        label: "D015_バッファ"
+
+  # Operator ID. 3-digit sequential code; the operator name / experience is kept
+  # in a separate master. Digits only, stored as a string so "007" keeps its
+  # leading zeros.
+  - key: operator_id
+    label: "オペレータID"
+    type: number
+    pattern: '^[0-9]{3}$'
+    placeholder: "e.g. 000"
+
+  # Task evaluation. Success / failure; the stored value stays ASCII.
+  - key: task_evaluation
+    label: "タスク評価"
+    type: select
+    options:
+      - value: success
+        label: "成功"
+      - value: failure
+        label: "失敗"
+
+  # NOTE: "failure_reason" (multi-select) is intentionally deferred — the
+  # metadata feature does not yet support multi-select, and the concrete list of
+  # reasons is not finalized. Add it once both are settled.
 
 # LeRobot dataset export mapping (used by the "Export to LeRobot" action on
 # /recordings). Declares how this robot's MCAP topics map to LeRobot v3.0

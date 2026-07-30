@@ -4,20 +4,22 @@
  * control per field — a select for `select` fields, a text input for `number`
  * (digits only, kept as a string) and `text` fields. Values are stored in the
  * settings store (persisted to localStorage), so they stick across recordings
- * until changed — like the task name. Renders nothing when the config defines
- * no metadata fields.
+ * until changed — like the task name. `task_evaluation` is entered from the
+ * completion banner instead and is excluded here. Renders nothing when the
+ * config defines no pre-recording metadata fields.
  */
 
 import { ChevronDown, Tags } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useConfig } from "@/hooks/use-api";
-import { matchesPattern } from "@/lib/metadata-field";
+import { matchesPattern, TASK_EVALUATION_KEY } from "@/lib/metadata-field";
 import { useSettingsStore } from "../store";
 
 export function RecordingMetadataPanel() {
   // --- Server state ---
   const { data: config } = useConfig();
-  const fields = config?.metadata_fields ?? [];
+  // task_evaluation is a post-recording judgement, entered from the completion banner.
+  const fields = (config?.metadata_fields ?? []).filter((f) => f.key !== TASK_EVALUATION_KEY);
 
   // --- Render-only state ---
   const metadata = useSettingsStore((s) => s.metadata);

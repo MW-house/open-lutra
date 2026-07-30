@@ -11,6 +11,8 @@
 
 > **Release status — pre-1.0 (v0.2.0, beta).** APIs, data formats, and the CLI/UI may change without notice. Pin a specific version for any production use.
 
+> **Repository scope — pilot for MW, Inc.** This repository is a pilot / verification (PoC) repository maintained specifically for MW, Inc. General-purpose reusability as an OSS project is not a goal here; changes prioritize MW's concrete use case. For general-purpose, OSS-oriented work see the upstream OpenLUTRA project.
+
 [Quickstart](#quickstart) · [Documentation](#documentation) · [Issues](https://github.com/fastlabel/open-lutra/issues) · [Security](./SECURITY.md)
 
 <!-- TBD: hero screenshot or short demo GIF (recording page in action) -->
