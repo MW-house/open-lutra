@@ -15,6 +15,7 @@ import { getGetRecordingsQueryKey, getGetRecordingsQueryOptions } from "@/api/ge
 import type { ConfigResponse } from "@/api/generated/schemas";
 import { useSettingsStore } from "@/features/settings";
 import type { LogEntry } from "@/hooks/use-topics-stream";
+import { TASK_EVALUATION_KEY } from "@/lib/metadata-field";
 import { queryClient } from "@/lib/query-client";
 import { sseKeys } from "@/lib/query-keys";
 import { useQualityHistoryStore } from "@/stores/quality-history-store";
@@ -43,15 +44,16 @@ function addLog(severity: "info" | "warning" | "danger", message: string) {
 export const startRecordingMutation = new MutationObserver(queryClient, {
   mutationFn: (topics: string[]) => {
     const { taskName, metadata } = useSettingsStore.getState();
-    // Drop sticky metadata whose field is no longer in the active config (e.g. after
-    // switching RECORDING_CONFIG) so orphaned localStorage values are not silently
-    // attached to every recording. Falls back to the raw map if config is not cached yet.
+    // Keep only sticky metadata for a field in the active config, and never send task_evaluation
+    // (a post-recording judgement entered from the completion banner). Dropping unknown keys also
+    // clears orphaned localStorage values, e.g. after switching RECORDING_CONFIG. Falls back to
+    // the raw map (minus task_evaluation) if config is not cached yet.
     const config = queryClient.getQueryData<{ data: ConfigResponse }>(getGetConfigQueryKey())?.data;
-    const activeMetadata = config
-      ? Object.fromEntries(
-          Object.entries(metadata).filter(([key]) => config.metadata_fields.some((f) => f.key === key)),
-        )
-      : metadata;
+    const activeMetadata = Object.fromEntries(
+      Object.entries(metadata).filter(
+        ([key]) => key !== TASK_EVALUATION_KEY && (config ? config.metadata_fields.some((f) => f.key === key) : true),
+      ),
+    );
     return startRecordingApi({ topics, task_name: taskName || null, metadata: activeMetadata });
   },
   onMutate: () => {

@@ -201,6 +201,36 @@ describe("startRecordingMutation", () => {
     });
   });
 
+  it("mutationFn: never sends task_evaluation (entered from the completion banner)", async () => {
+    queryClient.setQueryData(getGetConfigQueryKey(), {
+      data: {
+        metadata_fields: [
+          { key: "operator_id", label: "Operator ID", type: "number", pattern: null, placeholder: null, options: [] },
+          {
+            key: "task_evaluation",
+            label: "Task evaluation",
+            type: "select",
+            pattern: null,
+            placeholder: null,
+            options: [{ value: "success", label: "成功" }],
+          },
+        ],
+      },
+    });
+    vi.mocked(useSettingsStore.getState).mockReturnValueOnce({
+      taskName: "test-task",
+      metadata: { operator_id: "op001", task_evaluation: "failure" } as Record<string, string>,
+    } as ReturnType<typeof useSettingsStore.getState>);
+    startRecordingMutation.mutate(["/topic_a"]);
+    await flushMutation();
+
+    expect(mockStartRecordingApi).toHaveBeenCalledWith({
+      topics: ["/topic_a"],
+      task_name: "test-task",
+      metadata: { operator_id: "op001" },
+    });
+  });
+
   it("sets isStarting=true on mutate", async () => {
     startRecordingMutation.mutate(["/topic_a"]);
     expect(mockSetState).toHaveBeenCalledWith({ isStarting: true });

@@ -62,8 +62,19 @@ metadata_fields:
 - A **Metadata** popover in the recording bar (next to the task-name editor)
   renders one control per field. Selections are sticky across recordings
   (persisted in the browser's `localStorage`), like the task name.
+- **`task_evaluation` is a special case**: it is a post-recording judgement, so
+  it is *not* offered in the pre-recording panel. Instead the
+  recording-completion banner shows a success / failure selector once the
+  recording stops, defaulting to `success`; the banner persists the value
+  (including the default) to `recording_meta.json`. The selector can also be
+  cycled through its options with the `E` key, so a take can be labeled
+  hands-free. The frontend keys this off
+  the field's `key` (`task_evaluation`) — it is a deliberate MW-specific
+  behaviour rather than a general config flag. The field still appears in the
+  master `metadata_fields` so its label and options are master-defined.
 - Values can also be edited after the fact from the metadata dialog on the
-  recordings page, and appear as badges in the recordings list.
+  recordings page (which shows every field, `task_evaluation` included), and
+  appear as badges in the recordings list.
 
 ## Validation
 
