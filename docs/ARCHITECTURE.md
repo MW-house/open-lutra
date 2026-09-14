@@ -252,10 +252,9 @@ Direct references matching `@/features/*/*` are forbidden by Biome's `noRestrict
 
 ### orval (auto-generated API types and hooks)
 
-Generates TanStack Query hooks + TypeScript types from the backend's OpenAPI schema.
+Generates TanStack Query hooks + TypeScript types from the backend's OpenAPI schema. The schema is exported from `create_app()` by `backend/app/openapi.py` into `frontend/openapi.json` (committed, and checked against the code in CI), so generation runs on the host without Docker or a running backend.
 
 ```bash
-# Run while the backend is up
 make generate
 ```
 
@@ -538,24 +537,24 @@ Sensor topics (JointState, etc.):
 ### Production environment (`docker-compose.prod.yml`)
 
 ```
-┌──────────────────────────────────────────┐
-│              Linux host                   │
-│  network_mode: host                       │
-│                                           │
-│  ┌────────────┐     ┌────────────────┐    │
-│  │  backend   │     │   frontend     │    │
-│  │ :8000      │◄───►│   (nginx)      │    │
-│  │            │     │   :80          │    │
-│  └─────┬──────┘     └────────────────┘    │
-│        │ DDS                               │
-│  ┌─────▼──────────────────────────────┐   │
-│  │     Real Robot                     │   │
-│  └────────────────────────────────────┘   │
-└──────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────┐
+│                        Linux host                        │
+│                                                          │
+│  ┌────────────────────┐        ┌──────────────────────┐  │
+│  │      backend       │  HTTP  │       frontend       │  │
+│  │ network_mode: host │◄──────►│      (Vite dev)      │  │
+│  │ :8000              │        │        :5173         │  │
+│  └─────────┬──────────┘        │ backend:host-gateway │  │
+│            │ DDS               └──────────────────────┘  │
+│  ┌─────────▼──────────────────────────────────────────┐  │
+│  │                     Real Robot                     │  │
+│  └────────────────────────────────────────────────────┘  │
+└──────────────────────────────────────────────────────────┘
 ```
 
-- `network_mode: host` allows ROS2 DDS discovery to talk to the real robot
-- The frontend serves prebuilt files with nginx + a reverse proxy to the API
+- `network_mode: host` on the backend allows ROS2 DDS discovery to talk to the real robot
+- The frontend is served by the same Vite dev server as development (`pnpm run dev` on :5173). There is no separate production build or static file server
+- Only the backend joins the host network, so the frontend container reaches it through the `backend:host-gateway` entry declared in `extra_hosts`
 
 ---
 

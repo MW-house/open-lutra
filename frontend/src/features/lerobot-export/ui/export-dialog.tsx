@@ -1,6 +1,6 @@
 /** Dialog for exporting selected recordings to a LeRobot v3.0 dataset.
  *
- * The topic→feature mapping comes from the active robot config's
+ * The topic→feature mapping comes from the active recording config's
  * `lerobot_export` section, so this dialog only needs an output name. After
  * submission it keeps showing the job's live progress / result (driven by the
  * jobs SSE cache) so there is visible feedback in normal mode too — the
@@ -20,15 +20,8 @@ import { useLeRobotConfig } from "@/hooks/use-api";
 import { useJob } from "@/hooks/use-jobs-stream";
 
 /** Active robot mapping summary shown above the output-name field. */
-function MappingInfo({ config, loading }: { config: LeRobotConfigResponse | undefined; loading: boolean }) {
-  if (loading) return <div className="text-sm text-muted-foreground">Loading…</div>;
-  if (!config?.configured) {
-    return (
-      <div className="text-sm text-muted-foreground">
-        No <code>lerobot_export</code> mapping in the active robot config. Add one to the robot's YAML to enable export.
-      </div>
-    );
-  }
+function MappingInfo({ config }: { config: LeRobotConfigResponse | undefined }) {
+  if (!config?.configured) return null;
   return (
     <div className="text-sm text-muted-foreground">
       {config.robot_type} · cameras: {config.cameras.join(", ") || "(none)"}
@@ -91,7 +84,7 @@ export function ExportDialog({
   onExported: () => void;
 }) {
   // --- Server state ---
-  const { data: config, isLoading: configLoading } = useLeRobotConfig();
+  const { data: config } = useLeRobotConfig();
   const mutation = useStartLeRobotExport();
 
   // --- Local state (reset each time the dialog opens) ---
@@ -110,8 +103,8 @@ export function ExportDialog({
     }
   }, [open]);
 
-  const configured = config?.configured ?? false;
-  const canSubmit = configured && outputName.trim() !== "" && folders.length > 0 && !mutation.isPending;
+  const canSubmit =
+    (config?.configured ?? false) && outputName.trim() !== "" && folders.length > 0 && !mutation.isPending;
 
   const handleExport = () => {
     setSubmitError(null);
@@ -155,7 +148,7 @@ export function ExportDialog({
             <div className="space-y-4">
               <div className="space-y-1.5">
                 <Label>Mapping</Label>
-                <MappingInfo config={config} loading={configLoading} />
+                <MappingInfo config={config} />
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="lerobot-output">Output name</Label>
@@ -164,7 +157,6 @@ export function ExportDialog({
                   value={outputName}
                   onChange={(e) => setOutputName(e.target.value)}
                   placeholder="e.g. pick_and_place_v1"
-                  disabled={!configured}
                   autoFocus
                 />
                 <p className="text-[13px] text-muted-foreground">Written to _lerobot_exports/&lt;name&gt;/</p>

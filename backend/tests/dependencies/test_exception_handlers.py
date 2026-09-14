@@ -1,22 +1,17 @@
 """Tests for the exception handlers.
 
 Verifies that each recording exception is mapped to the correct HTTP status code.
-
-NOTE: app.main requires rclpy, so this can only run inside Docker (make test).
 """
 
+from unittest.mock import MagicMock
+
 import pytest
+from fastapi.testclient import TestClient
 
-rclpy = pytest.importorskip("rclpy", reason="rclpy is required (run via 'make test')")
-
-from unittest.mock import MagicMock  # noqa: E402
-
-from fastapi.testclient import TestClient  # noqa: E402
-
-from app.dependencies import set_recorder  # noqa: E402
-from app.dependencies.services import get_recorder  # noqa: E402
-from app.features.recording import AlreadyRecordingError, NotRecordingError, RecorderError  # noqa: E402
-from app.main import create_app  # noqa: E402
+from app.dependencies import set_recorder
+from app.dependencies.services import get_recorder
+from app.features.recording import AlreadyRecordingError, NotRecordingError, RecorderError
+from app.main import create_app
 
 
 @pytest.fixture
@@ -60,3 +55,30 @@ class TestRecorderErrorHandler:
         response = client.post("/api/recording/start")
         assert response.status_code == 500
         assert response.json()["detail"] == "Internal error"
+
+
+class TestCatchAllHandler:
+    """Unexpected exceptions -> 500 naming the exception instead of a bare 'Internal Server Error'."""
+
+    @pytest.fixture
+    def raw_client(self) -> TestClient:
+        """Client that returns the 500 response instead of re-raising server exceptions."""
+        app = create_app()
+        recorder = MagicMock()
+        recorder.is_recording = False
+        set_recorder(recorder)
+        return TestClient(app, raise_server_exceptions=False)
+
+    def test_names_exception_type_and_message(self, raw_client: TestClient) -> None:
+        recorder = get_recorder()
+        recorder.start.side_effect = ValueError("boom")
+        response = raw_client.post("/api/recording/start")
+        assert response.status_code == 500
+        assert "ValueError: boom" in response.json()["detail"]
+
+    def test_falls_back_to_type_for_empty_message(self, raw_client: TestClient) -> None:
+        recorder = get_recorder()
+        recorder.start.side_effect = RuntimeError()
+        response = raw_client.post("/api/recording/start")
+        assert response.status_code == 500
+        assert "RuntimeError" in response.json()["detail"]
