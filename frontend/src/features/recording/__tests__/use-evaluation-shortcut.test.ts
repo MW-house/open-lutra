@@ -8,8 +8,8 @@ const OPTIONS: MetadataFieldOptionResponse[] = [
   { value: "failure", label: "失敗" },
 ];
 
-function dispatchE(init: KeyboardEventInit = {}): KeyboardEvent {
-  const event = new KeyboardEvent("keydown", { code: "KeyE", cancelable: true, ...init });
+function dispatchE(): KeyboardEvent {
+  const event = new KeyboardEvent("keydown", { code: "KeyE", cancelable: true });
   document.dispatchEvent(event);
   return event;
 }
@@ -22,10 +22,10 @@ function mount(props: Partial<Parameters<typeof useEvaluationShortcut>[0]> = {})
   return { onSelect, ...result };
 }
 
+/** The shared listener and focus rule are covered by use-page-shortcut / keyboard; this is the cycle. */
 describe("useEvaluationShortcut", () => {
   afterEach(() => {
     vi.clearAllMocks();
-    document.body.innerHTML = "";
   });
 
   it("advances to the next option and prevents default", () => {
@@ -53,6 +53,21 @@ describe("useEvaluationShortcut", () => {
     expect(onSelect).toHaveBeenCalledWith("success");
   });
 
+  it("cycles from the latest value, so a second press advances again", () => {
+    const onSelect = vi.fn();
+    const { rerender } = renderHook(
+      ({ current }: { current: string }) =>
+        useEvaluationShortcut({ enabled: true, options: OPTIONS, current, onSelect }),
+      { initialProps: { current: "success" } },
+    );
+
+    rerender({ current: "failure" });
+    dispatchE();
+
+    // Reads the fresh "failure" and wraps to "success" rather than the stale "success" → "failure".
+    expect(onSelect).toHaveBeenCalledWith("success");
+  });
+
   it("does nothing when disabled", () => {
     const { onSelect } = mount({ enabled: false });
 
@@ -68,64 +83,5 @@ describe("useEvaluationShortcut", () => {
 
     expect(onSelect).not.toHaveBeenCalled();
     expect(event.defaultPrevented).toBe(false);
-  });
-
-  it("ignores the key combined with a modifier", () => {
-    const { onSelect } = mount();
-
-    dispatchE({ ctrlKey: true });
-
-    expect(onSelect).not.toHaveBeenCalled();
-  });
-
-  it("ignores auto-repeat (held key)", () => {
-    const { onSelect } = mount();
-
-    dispatchE({ repeat: true });
-
-    expect(onSelect).not.toHaveBeenCalled();
-  });
-
-  it("ignores keys other than E", () => {
-    const { onSelect } = mount();
-
-    document.dispatchEvent(new KeyboardEvent("keydown", { code: "KeyR", cancelable: true }));
-
-    expect(onSelect).not.toHaveBeenCalled();
-  });
-
-  it("does not fire while a text input is focused", () => {
-    const input = document.createElement("input");
-    document.body.appendChild(input);
-    input.focus();
-    const { onSelect } = mount();
-
-    dispatchE();
-
-    expect(onSelect).not.toHaveBeenCalled();
-  });
-
-  it("reads the latest current value without re-subscribing on change", () => {
-    const onSelect = vi.fn();
-    const { rerender } = renderHook(
-      ({ current }: { current: string }) =>
-        useEvaluationShortcut({ enabled: true, options: OPTIONS, current, onSelect }),
-      { initialProps: { current: "success" } },
-    );
-
-    rerender({ current: "failure" });
-    dispatchE();
-
-    // Reads the fresh "failure" and wraps to "success" rather than the stale "success" → "failure".
-    expect(onSelect).toHaveBeenCalledWith("success");
-  });
-
-  it("removes the listener on unmount", () => {
-    const { onSelect, unmount } = mount();
-
-    unmount();
-    dispatchE();
-
-    expect(onSelect).not.toHaveBeenCalled();
   });
 });
