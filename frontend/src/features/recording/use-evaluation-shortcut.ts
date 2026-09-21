@@ -4,10 +4,14 @@
  * Mounted by RecordingCompletionBanner, which renders only while a finished recording is shown, so
  * the listener is scoped to that window and torn down when the banner clears. Uses a distinct key
  * from the Space record-toggle (use-record-shortcut) so the two coexist on the recorder page.
+ *
+ * The focus rule and the listener setup come from usePageShortcut, so E follows the same rule as
+ * Space. No per-key exception is needed: none of the recorder page's <select> options start with
+ * "e", so cancelling the native typeahead costs nothing.
  */
-import { useEffect, useRef } from "react";
+
 import type { MetadataFieldOptionResponse } from "@/api/generated/schemas";
-import { isInteractiveTarget } from "./keyboard";
+import { usePageShortcut } from "./use-page-shortcut";
 
 interface EvaluationShortcutParams {
   /** Register the listener only while the banner can act (finished recording + field + entry). */
@@ -21,25 +25,12 @@ interface EvaluationShortcutParams {
 }
 
 export function useEvaluationShortcut({ enabled, options, current, onSelect }: EvaluationShortcutParams): void {
-  // Keep the latest inputs in a ref so the handler reads fresh values without re-subscribing on
-  // every selection change (mirrors use-record-shortcut reading getState() at fire time).
-  const latest = useRef({ options, current, onSelect });
-  latest.current = { options, current, onSelect };
-
-  useEffect(() => {
-    if (!enabled) return;
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.code !== "KeyE" || e.repeat) return;
-      if (e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return;
-      if (isInteractiveTarget(document.activeElement)) return;
-      const { options: opts, current: cur, onSelect: select } = latest.current;
-      if (opts.length === 0) return;
-      e.preventDefault();
-      // Advance to the next option, wrapping at the end; an unknown current (index -1) → first.
-      const next = opts[(opts.findIndex((o) => o.value === cur) + 1) % opts.length];
-      select(next.value);
-    };
-    document.addEventListener("keydown", onKeyDown);
-    return () => document.removeEventListener("keydown", onKeyDown);
-  }, [enabled]);
+  usePageShortcut({
+    code: "KeyE",
+    // An empty list has nothing to cycle. Gating registration rather than returning from onFire
+    // leaves the key to the rest of the page instead of cancelling its default for nothing.
+    enabled: enabled && options.length > 0,
+    // Advance to the next option, wrapping at the end; an unknown current (index -1) → first.
+    onFire: () => onSelect(options[(options.findIndex((o) => o.value === current) + 1) % options.length].value),
+  });
 }

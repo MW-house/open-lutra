@@ -3,14 +3,14 @@
  * Do not edit manually.
  * OpenLUTRA
  * ROS2 topic recorder for teleoperation robots (ROS2-standard topics)
- * OpenAPI spec version: 0.2.0
+ * OpenAPI spec version: 0.4.3
  */
 
 /**
  * The active robot's LeRobot export mapping summary (for the export dialog).
  */
 export interface LeRobotConfigResponse {
-  /** Whether the active robot config declares a lerobot_export mapping */
+  /** Whether the active recording config declares a lerobot_export mapping */
   configured: boolean;
   /** Robot type from the mapping (null when not configured) */
   robot_type: string | null;

@@ -25,7 +25,7 @@ This project supports two development approaches.
 | **Host + `make up`** | o (hot reload) | o (Vite HMR) | x | Full-stack development |
 | **Dev Container** | o (directly inside the container) | x (requires separate startup) | o | Backend-focused development |
 
-**Dev Container is recommended for backend development.** rclpy type completion and go-to-definition work, and tests can be executed directly inside the container.
+**Dev Container is recommended when editing rclpy-dependent code** (`backend/app/infra/ros2/topic_node.py`, `thread.py`): rclpy type completion and go-to-definition work there. Backend tests, lint, and type checks run on the host in either approach (see [Testing](#testing)).
 
 ---
 
@@ -162,14 +162,14 @@ If you changed `pyproject.toml`, running `uv sync` inside the container is enoug
 
 ```bash
 make test              # Everything (backend + frontend)
-make test-backend      # Backend only (pytest, inside Docker)
+make test-backend      # Backend only (pytest)
 make test-frontend     # Frontend only (vitest)
 make test-cov          # Everything + coverage
-make test-cov-backend  # Backend + coverage (inside Docker)
+make test-cov-backend  # Backend + coverage
 make test-cov-frontend # Frontend + coverage
 ```
 
-Backend tests run inside the Docker container (rclpy is required).
+Backend tests run on the host with `uv` alone — neither Docker nor rclpy is required. `app.main` imports the rclpy-dependent modules inside the lifespan, so `create_app()` (and therefore every router) is importable without ROS 2. `tests/conftest.py` defaults the `RECORDING_CONFIG` / `OUTPUT_DIR` variables that `Settings` requires, so plain `uv run pytest` and IDE test runners work without a `.env`. The same suite also runs inside the Dev Container.
 
 ### Test Layout
 
@@ -193,7 +193,7 @@ Maintain 100% coverage. For code that cannot be tested, exclude it from coverage
 
 - Endpoint functions are HTTP glue code, so mark them with `# pragma: no cover` and do not write unit tests for them
 - Extract pure logic from routers into separate modules and test those (e.g., `scanner.py`)
-- Integration tests run only inside Docker via `pytest.importorskip("rclpy")`
+- Endpoint wiring (status codes, exception handlers) is covered by `TestClient` tests against `create_app()` with mocked services (`test_router.py`, `test_exception_handlers.py`)
 
 **Rules for writing tests:**
 
@@ -345,7 +345,7 @@ ignore_missing_imports = true
 2. Add the endpoint in `backend/app/features/{domain}/router.py` (always set `operation_id`)
 3. If needed, implement business logic in `backend/app/features/{domain}/service.py`
 4. Add tests
-5. Regenerate the frontend API types: `make generate` (run while the backend is up)
+5. Regenerate the frontend API types: `make generate` (exports `frontend/openapi.json` from the app and runs orval; no running backend needed). Commit the updated `openapi.json` together with the generated code — CI checks that it matches the backend
 6. If you added SSE events, update `docs/domain/sse.md`
 
 ### Supporting a New Topic Type
@@ -379,6 +379,7 @@ ignore_missing_imports = true
 
 ### Updating Docker Image Dependencies
 
-1. Python: edit `pyproject.toml` → `make build` to rebuild the image
-2. Node.js: edit `frontend/package.json` → `make build` to rebuild the image
-3. ROS2 packages: edit `apt-get install` in the `Dockerfile` → `make build`
+Which edits are picked up by a restart and which need `make build` differs per component, and differs again between the development and the production stack. See the "What lands where" table in each component's README:
+
+- [backend/README.md](../backend/README.md#what-lands-where) — Python dependencies, ROS 2 / apt packages, config YAML
+- [frontend/README.md](../frontend/README.md#what-lands-where) — Node.js dependencies, the pnpm version, Vite config

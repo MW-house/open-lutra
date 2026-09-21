@@ -3,24 +3,15 @@
  * Mounted by RecordButton, which renders only on the recorder page, so the shortcut is
  * scoped to that page and torn down on navigation. Targets hands-free operation (e.g. a
  * foot pedal that emits Space) per issue #34.
+ *
+ * Always live: `toggle()` carries its own connection and selected-topic guards, and cancelling
+ * the keydown default suppresses the native Space-to-click, so a focused Record button toggles
+ * once.
  */
-import { useEffect } from "react";
-import { isInteractiveTarget } from "./keyboard";
+
 import { useRecordingStore } from "./store";
+import { usePageShortcut } from "./use-page-shortcut";
 
 export function useRecordShortcut(): void {
-  useEffect(() => {
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.code !== "Space" || e.repeat) return;
-      if (e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return;
-      // Skip while typing or when an element already handles Space (also avoids a double-toggle
-      // when the Record button itself is focused — its native Space click handles that case).
-      if (isInteractiveTarget(document.activeElement)) return;
-      // Space owns the recorder page; suppress the default page scroll.
-      e.preventDefault();
-      useRecordingStore.getState().toggle();
-    };
-    document.addEventListener("keydown", onKeyDown);
-    return () => document.removeEventListener("keydown", onKeyDown);
-  }, []);
+  usePageShortcut({ code: "Space", onFire: () => useRecordingStore.getState().toggle() });
 }

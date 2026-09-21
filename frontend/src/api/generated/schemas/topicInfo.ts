@@ -3,7 +3,7 @@
  * Do not edit manually.
  * OpenLUTRA
  * ROS2 topic recorder for teleoperation robots (ROS2-standard topics)
- * OpenAPI spec version: 0.2.0
+ * OpenAPI spec version: 0.4.3
  */
 
 /**
@@ -14,7 +14,6 @@ export interface TopicInfo {
   msg_type: string;
   actual_hz: number;
   status: string;
-  last_received_at: string | null;
   message_count: number;
   is_subscribed: boolean;
   baseline_hz: number | null;

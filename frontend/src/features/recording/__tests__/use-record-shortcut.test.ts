@@ -11,16 +11,16 @@ vi.mock("../store", () => ({
 
 import { useRecordShortcut } from "../use-record-shortcut";
 
-function dispatchSpace(init: KeyboardEventInit = {}): KeyboardEvent {
-  const event = new KeyboardEvent("keydown", { code: "Space", cancelable: true, ...init });
+function dispatchSpace(): KeyboardEvent {
+  const event = new KeyboardEvent("keydown", { code: "Space", cancelable: true, bubbles: true });
   document.dispatchEvent(event);
   return event;
 }
 
+/** The shared listener and focus rule are covered by use-page-shortcut / keyboard; this is the wiring. */
 describe("useRecordShortcut", () => {
   afterEach(() => {
     vi.clearAllMocks();
-    document.body.innerHTML = "";
   });
 
   it("toggles recording on a plain Space and prevents the default scroll", () => {
@@ -32,50 +32,13 @@ describe("useRecordShortcut", () => {
     expect(event.defaultPrevented).toBe(true);
   });
 
-  it("ignores Space combined with a modifier key", () => {
-    renderHook(() => useRecordShortcut());
-
-    dispatchSpace({ ctrlKey: true });
-
-    expect(mockToggle).not.toHaveBeenCalled();
-  });
-
-  it("ignores auto-repeat (held key)", () => {
-    renderHook(() => useRecordShortcut());
-
-    dispatchSpace({ repeat: true });
-
-    expect(mockToggle).not.toHaveBeenCalled();
-  });
-
-  it("ignores keys other than Space", () => {
-    renderHook(() => useRecordShortcut());
-
-    document.dispatchEvent(new KeyboardEvent("keydown", { code: "Enter", cancelable: true }));
-
-    expect(mockToggle).not.toHaveBeenCalled();
-  });
-
-  it("does not fire while a text input is focused", () => {
-    const input = document.createElement("input");
-    document.body.appendChild(input);
-    input.focus();
+  it("is always live, so Space reaches recording without a further gate", () => {
     renderHook(() => useRecordShortcut());
 
     dispatchSpace();
-
-    expect(mockToggle).not.toHaveBeenCalled();
-  });
-
-  it("does not fire while a button is focused (its native Space click handles it)", () => {
-    const button = document.createElement("button");
-    document.body.appendChild(button);
-    button.focus();
-    renderHook(() => useRecordShortcut());
-
     dispatchSpace();
 
-    expect(mockToggle).not.toHaveBeenCalled();
+    expect(mockToggle).toHaveBeenCalledTimes(2);
   });
 
   it("removes the listener on unmount", () => {

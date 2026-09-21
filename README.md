@@ -1,19 +1,27 @@
-<!-- TBD: project logo / hero banner image -->
+<div align="center">
 
-# OpenLUTRA
+<img src="docs/assets/logo.png" alt="OpenLUTRA" width="360">
 
-[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](./LICENSE)
-[![Version](https://img.shields.io/badge/version-0.2.0-orange.svg)](#release-status)
-[![Status: Beta](https://img.shields.io/badge/status-beta-yellow.svg)](#release-status)
-[![CI](https://github.com/fastlabel/open-lutra/actions/workflows/ci.yml/badge.svg)](https://github.com/fastlabel/open-lutra/actions/workflows/ci.yml)
+<p><strong>A ROS2 data-recording system for robot teaching — record topics from ROS2-compatible robots and persist them as MCAP, all driven from a web UI.</strong></p>
 
-**A ROS2 data-recording system for robot teaching — record topics from ROS2-compatible robots and persist them as MCAP, all driven from a web UI.**
+<p>
+  <a href="./LICENSE"><img src="https://img.shields.io/badge/License-Apache_2.0-blue.svg" alt="License: Apache 2.0"></a>
+  <a href="https://github.com/fastlabel/open-lutra/actions/workflows/ci.yml"><img src="https://github.com/fastlabel/open-lutra/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+</p>
 
-> **Release status — pre-1.0 (v0.2.0, beta).** APIs, data formats, and the CLI/UI may change without notice. Pin a specific version for any production use.
+<p>
+  <a href="#quickstart">Quickstart</a> ·
+  <a href="#documentation">Documentation</a> ·
+  <a href="https://github.com/fastlabel/open-lutra/issues">Issues</a> ·
+  <a href="https://github.com/fastlabel/open-lutra/discussions">Discussions</a> ·
+  <a href="./SECURITY.md">Security</a>
+</p>
+
+</div>
+
+> **Release status — pre-1.0 (v0.4.3).** APIs, data formats, and the CLI/UI may change without notice. Pin a specific version for any production use.
 
 > **Repository scope — pilot for MW, Inc.** This repository is a pilot / verification (PoC) repository maintained specifically for MW, Inc. General-purpose reusability as an OSS project is not a goal here; changes prioritize MW's concrete use case. For general-purpose, OSS-oriented work see the upstream OpenLUTRA project.
-
-[Quickstart](#quickstart) · [Documentation](#documentation) · [Issues](https://github.com/fastlabel/open-lutra/issues) · [Security](./SECURITY.md)
 
 <!-- TBD: hero screenshot or short demo GIF (recording page in action) -->
 
@@ -71,7 +79,7 @@ make up      # start dev environment (simulator + backend + frontend)
 ### Production (Ubuntu + real robot)
 
 ```bash
-cp .env.example .env   # set ROS_DOMAIN_ID to match your robot
+cp .env.example .env   # set RECORDING_CONFIG and OUTPUT_DIR; ROS_DOMAIN_ID lives in the YAML that RECORDING_CONFIG selects
 make prod-up           # production start (network_mode: host)
 ```
 
@@ -121,12 +129,14 @@ Attach fixed attributes — operator ID, target object, and so on — to each re
 | [docs/SETUP.md](docs/SETUP.md) | Setup guide (prerequisites, dev, prod, env vars) |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Architecture (system, data flow, Docker) |
 | [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) | Development guide (style, branching, tests) |
+| [backend/README.md](backend/README.md) | Backend container layout (what a restart picks up, what needs a rebuild) |
+| [frontend/README.md](frontend/README.md) | Frontend container layout (what a restart picks up, what needs a rebuild) |
 | [docs/domain/](docs/domain/index.md) | Domain notes (ROS2, MCAP, LeRobot, quality analysis) |
 | [examples/](examples/) | Reference snippets (e.g. plugging in custom ROS2 message types) |
 
 ## Release status
 
-OpenLUTRA is currently **v0.2.0 (beta)** and follows the [SemVer](https://semver.org/) `0.y.z` convention: minor versions may include breaking changes until v1.0.0. Only the latest `main` is eligible for security fixes (see [SECURITY.md](./SECURITY.md)).
+OpenLUTRA is currently **v0.4.3** and follows the [SemVer](https://semver.org/) `0.y.z` convention: minor versions may include breaking changes until v1.0.0. Only the latest `main` is eligible for security fixes (see [SECURITY.md](./SECURITY.md)).
 
 Docker images are **not** published at this stage; the project is distributed as source.
 
@@ -137,18 +147,22 @@ Nothing on this list is committed — these are directions we are currently expl
 - **Richer validation and quality analysis** — expand the set of built-in validators and quality metrics, and surface more actionable diagnostics in the UI.
 - **Recording labeling** — attach labels, tags, and review status to recordings to organize datasets for downstream training.
 - **Seamless storage integrations** — first-class support for shipping recorded files to various storage backends (object stores, dataset platforms, etc.).
-- **etc.** — feedback via [issues](https://github.com/fastlabel/open-lutra/issues) is welcome.
+- **etc.** — feedback via [issues](https://github.com/fastlabel/open-lutra/issues) and [discussions](https://github.com/fastlabel/open-lutra/discussions) is welcome.
 
 ## Support
 
-- File an issue at <https://github.com/fastlabel/open-lutra/issues>. Bug reports, feature requests, and questions are welcome in English or Japanese.
-- For security reports, see [SECURITY.md](./SECURITY.md) — please do not open a public issue.
+- **Questions about usage, configuration, or expected behavior** — ask in [Discussions → Q&A](https://github.com/fastlabel/open-lutra/discussions/categories/q-a).
+- **Bugs and feature requests** — file an [issue](https://github.com/fastlabel/open-lutra/issues/new/choose).
+- **Your setup or what you built with OpenLUTRA** — share it in [Discussions → Show and tell](https://github.com/fastlabel/open-lutra/discussions/categories/show-and-tell).
+- English or Japanese is fine for all of the above.
+- For security reports, see [SECURITY.md](./SECURITY.md) — please do not post them publicly.
 
 ## Contributing
 
-External pull requests are **not accepted at this stage**. Issues are welcome — see [CONTRIBUTING.md](./CONTRIBUTING.md).
+External pull requests are **not accepted at this stage**. Issues and discussions are welcome — see [CONTRIBUTING.md](./CONTRIBUTING.md).
 
-<!-- TBD: add CODE_OF_CONDUCT.md (e.g. Contributor Covenant) and link here before opening external contributions. -->
+Everyone taking part in these spaces is expected to follow our [Code of Conduct](./CODE_OF_CONDUCT.md).
+
 <!-- TBD: add GOVERNANCE.md describing the maintainer / decision-making model before opening external contributions. -->
 
 ## License
@@ -169,3 +183,4 @@ OpenLUTRA builds on the work of many upstream projects, including [ROS2](https:/
 ---
 
 Maintained by [FastLabel, Inc.](https://fastlabel.ai)
+

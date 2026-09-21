@@ -23,15 +23,15 @@ make lint              # Lint (everything: backend + frontend)
 make lint-backend      # Lint (ruff + mypy)
 make lint-frontend     # Lint (tsc + biome)
 make test              # Test (everything: backend + frontend)
-make test-backend      # Test (pytest, inside Docker)
+make test-backend      # Test (pytest)
 make test-frontend     # Test (vitest)
 make test-cov          # Test + coverage (everything)
-make test-cov-backend  # Test + coverage (pytest, inside Docker)
+make test-cov-backend  # Test + coverage (pytest)
 make test-cov-frontend # Test + coverage (vitest)
 make format            # Format (everything: backend + frontend)
 make format-backend    # Format (ruff)
 make format-frontend   # Format (biome)
-make generate          # Regenerate API types (requires: backend running)
+make generate          # Regenerate API types (exports OpenAPI + runs orval; no running backend needed)
 make build             # Build Docker images
 make minio-up          # Start the local MinIO sandbox + auto-create the bucket (for upload-feature testing)
 make minio-down        # Stop the local MinIO sandbox
@@ -66,7 +66,7 @@ A **hybrid architecture** is used:
 - **MCAP I/O is consolidated in `backend/app/infra/mcap/`**: Centralizes `make_reader` + `DecoderFactory` initialization, header.stamp-preferred timestamp normalization, and image/Joint structure detection. All consumers in analysis / media read MCAP through this layer.
 - **Validation takes a ValidationContext as input**: After a recording stops, quality → validation runs automatically as a chain in JobQueue, and results are saved to `validation_result.json`. `ValidationContext` is a frozen dataclass bundling `QualityReport` / `recording_dir` / `mcap_path` / `recording_meta`; it also exposes the MCAP path so validators can read raw frames with `MCAPReader` when needed (if you only need aggregated values, `ctx.report` is enough). Builtins live in `backend/app/features/validation/builtins/` with their params controlled by `active_set.py`; user-defined validators go in `backend/app/features/validation/custom/` registered via `@register_validator` and applied on restart. See [docs/domain/custom_validators.md](docs/domain/custom_validators.md) for how to add a custom validator.
 - **Upload destinations are pluggable behind a Protocol**: The upload feature is generic over the storage backend. `UploadDestination` (in `backend/app/features/upload/destinations/base.py`) defines `configuration_error()` + `prepare_target(recording_name, recording_start_ns) -> (label, key)` + `upload(local_path, key, progress) -> UploadResult`; implementations today are `S3Destination` (boto3; also covers MinIO / R2 / LocalStack via `AWS_ENDPOINT_URL`) and `LocalDestination` (`shutil.copyfile` to a bind-mounted directory for NFS / SMB shares). `UPLOAD_DESTINATION` selects the active backend; when unset, the registry returns a `DisabledDestination` whose `configuration_error()` keeps the upload feature off (`/api/upload/start` refuses to enqueue and the UI hides its affordances). The registry returns a single active destination per machine. Adding a new backend (GCS, …) means one new module under `destinations/` + a registry update — `UploadService` / `JobQueue` / `UploadState` are destination-agnostic. See [docs/domain/upload.md](docs/domain/upload.md) for the lifecycle, key-template syntax, and failure modes.
-- **Pre-registered recording metadata is master-defined**: Operators set values for named fields (e.g. operator ID, target object) from the "Metadata" panel in the recording bar before recording. The selection is sticky across recordings (localStorage, like the task name) and is written into each recording's `recording_meta.json` under `metadata` (a `key -> value` map, separate from the free-form `tags`). The master declares the fields in the active recording config's `metadata_fields:` section (`config/<recording>.yaml`, selected via `RECORDING_CONFIG`), surfaced to the UI through `GET /api/config`. Each field has a `type`: `select` (pick from `options`), `number` (digits only), or `text` (free), plus an optional `pattern` (regex) and `placeholder`. **Metadata values are always stored as strings** — a `number` field keeps leading zeros (e.g. `"007"`), never parsed to an int. One field is treated specially in the frontend by its `key`: `task_evaluation` is a post-recording judgement, so it is hidden from the pre-recording panel and instead entered from the recording-completion banner (defaulting to `success`), which persists it to `recording_meta.json`. The banner's selector can also be cycled through its options with the `E` key (`frontend/src/features/recording/use-evaluation-shortcut.ts`), so an operator can label a take hands-free. This is a deliberate MW-specific special case (keyed off `task_evaluation`), not a general config mechanism. Values are stored as submitted (no server-side validation, so recordings are never blocked); the `type`/`pattern` constraints are enforced in the UI. See [docs/domain/metadata.md](docs/domain/metadata.md) and the documented `metadata_fields` section in [config/simulator.yaml](config/simulator.yaml).
+- **Pre-registered recording metadata is master-defined**: Operators set values for named fields (e.g. operator ID, target object) from the "Metadata" panel in the recording bar before recording. The selection is sticky across recordings (localStorage, like the task name) and is written into each recording's `recording_meta.json` under `metadata` (a `key -> value` map, separate from the free-form `tags`). The master declares the fields in the active recording config's `metadata_fields:` section (`config/<recording>.yaml`, selected via `RECORDING_CONFIG`), surfaced to the UI through `GET /api/config`. Each field has a `type`: `select` (pick from `options`), `number` (digits only), or `text` (free), plus an optional `pattern` (regex) and `placeholder`. **Metadata values are always stored as strings** — a `number` field keeps leading zeros (e.g. `"007"`), never parsed to an int. One field is treated specially in the frontend by its `key`: `task_evaluation` is a post-recording judgement, so it is hidden from the pre-recording panel and instead entered from the recording-completion banner (defaulting to `success`), which persists it to `recording_meta.json`. The banner's selector can also be cycled through its options with the `E` key (`frontend/src/features/recording/use-evaluation-shortcut.ts`), so an operator can label a take hands-free; like the `Space` record toggle it is built on the shared page-shortcut modules (`use-page-shortcut.ts` + `keyboard.ts`), so both keys follow one focus rule. This is a deliberate MW-specific special case (keyed off `task_evaluation`), not a general config mechanism. Values are stored as submitted (no server-side validation, so recordings are never blocked); the `type`/`pattern` constraints are enforced in the UI. See [docs/domain/metadata.md](docs/domain/metadata.md) and the documented `metadata_fields` section in [config/simulator.yaml](config/simulator.yaml).
 
 ## Frontend Architecture
 
@@ -78,7 +78,7 @@ Uses the **Bulletproof React** pattern. See [docs/ARCHITECTURE.md](docs/ARCHITEC
 - **No internal references**: Biome's `noRestrictedImports` makes direct references to `@/features/*/*` an error.
 - **Placement rule**: Modules used by only one feature live inside that feature; modules shared across multiple features live in `hooks/`, `lib/`, or `stores/`.
 - **Keep individual files small**: Small UI components inside a feature go in `features/xxx/ui/`. Once shared across multiple features, promote them to `components/ui/`.
-- **API type generation**: orval auto-generates TanStack Query hooks + types from OpenAPI (`make generate`; run while the backend is up).
+- **API type generation**: orval auto-generates TanStack Query hooks + types from OpenAPI (`make generate`). The schema is exported from the app by `python -m app.openapi` into `frontend/openapi.json` (committed), so no running backend is needed; CI fails if the committed schema drifts from the code.
 - **Import rule**: Types are imported directly from `@/api/generated/schemas`. Do not re-export types from `use-api.ts`. Use generated type names as-is (alias only on name collision).
 - **Use orval-generated types**: API response/request types must use the orval-generated schemas (`@/api/generated/schemas`). Do not define types manually. After backend schema changes, regenerate with `make generate`.
 
@@ -88,10 +88,9 @@ Uses the **Bulletproof React** pattern. See [docs/ARCHITECTURE.md](docs/ARCHITEC
 
 - **Maintain 100% coverage** — verify with `make test-cov`.
 - The test structure mirrors the `backend/app/` directory structure (`backend/tests/features/recording/test_service.py` → `backend/app/features/recording/service.py`).
-- Untestable code (rclpy runtime, Docker-only, MCAP I/O) is excluded via `pragma: no cover` and not tested.
+- Backend tests run on the host without Docker or rclpy (`app.main` imports rclpy lazily inside the lifespan). Untestable code (rclpy runtime, Docker-only, MCAP I/O) is excluded via `pragma: no cover` and not tested.
 - Endpoint functions in `router.py` are HTTP glue code and are excluded with `pragma: no cover`. Pure logic is extracted out of the router and tested (e.g., `scanner.py`).
-- Tests that only run inside Docker (rclpy-dependent) are auto-skipped with `pytest.importorskip("rclpy")`.
-- Tests must not depend on filesystem permissions (chmod); use `unittest.mock.patch` instead (chmod fails as Docker root).
+- Tests must not depend on filesystem permissions (chmod); use `unittest.mock.patch` instead (chmod fails as root in CI / Dev Container).
 
 ## Coding Style
 

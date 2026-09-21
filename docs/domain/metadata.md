@@ -68,10 +68,14 @@ metadata_fields:
   recording stops, defaulting to `success`; the banner persists the value
   (including the default) to `recording_meta.json`. The selector can also be
   cycled through its options with the `E` key, so a take can be labeled
-  hands-free. The frontend keys this off
-  the field's `key` (`task_evaluation`) — it is a deliberate MW-specific
-  behaviour rather than a general config flag. The field still appears in the
-  master `metadata_fields` so its label and options are master-defined.
+  hands-free. `E` is a page shortcut like the `Space` record toggle and shares
+  its focus rule (`frontend/src/features/recording/use-page-shortcut.ts`): it
+  fires even while a button, checkbox or switch keeps focus after a click, and
+  yields only to text entry and to an open popover or dialog. The frontend keys
+  this off the field's `key` (`task_evaluation`) — it is a deliberate
+  MW-specific behaviour rather than a general config flag. The field still
+  appears in the master `metadata_fields` so its label and options are
+  master-defined.
 - Values can also be edited after the fact from the metadata dialog on the
   recordings page (which shows every field, `task_evaluation` included), and
   appear as badges in the recordings list.
