@@ -9,6 +9,7 @@ from unittest.mock import patch
 
 from app.features.recordings.meta import (
     RecordingMeta,
+    merge_recording_metadata,
     read_recording_meta,
     update_recording_meta,
     write_recording_meta,
@@ -60,7 +61,7 @@ class TestReadRecordingMeta:
     def test_invalid_schema_returns_none(self, tmp_path: Path) -> None:
         """Returns None when schema validation fails (type mismatch)."""
         (tmp_path / "recording_meta.json").write_text(
-            json.dumps({"task_name": 123, "tags": "not-a-list"}),  # Type mismatch
+            json.dumps({"task_name": 123, "tags": "not-a-list"}),
             encoding="utf-8",
         )
         assert read_recording_meta(tmp_path) is None
@@ -114,7 +115,6 @@ class TestUpdateRecordingMeta:
         assert result.task_name == "new"
         assert result.recording_config_name is None
         assert result.tags == ["a"]
-        # It is also written out as a file
         assert (tmp_path / "recording_meta.json").exists()
 
     def test_partial_update_preserves_existing_fields(self, tmp_path: Path) -> None:
@@ -127,7 +127,6 @@ class TestUpdateRecordingMeta:
         result = update_recording_meta(tmp_path, task_name="updated")
 
         assert result.task_name == "updated"
-        # recording_config_name and tags are preserved
         assert result.recording_config_name == "simulator"
         assert result.tags == ["x"]
 
@@ -205,3 +204,34 @@ class TestUpdateRecordingMeta:
         result = update_recording_meta(tmp_path, metadata={})
 
         assert result.metadata == {}
+
+
+class TestMergeRecordingMetadata:
+    """Tests for merge_recording_metadata."""
+
+    def test_sets_given_keys_and_keeps_other_fields(self, tmp_path: Path) -> None:
+        """Given keys are overwritten or added; other keys, task_name, and tags are preserved."""
+        write_recording_meta(
+            tmp_path,
+            RecordingMeta(
+                task_name="keep",
+                recording_config_name="sim",
+                tags=["x"],
+                metadata={"operator_id": "op001", "target_object": "box"},
+            ),
+        )
+
+        result = merge_recording_metadata(tmp_path, {"target_object": "cup", "scene": "kitchen"})
+
+        assert result.metadata == {"operator_id": "op001", "target_object": "cup", "scene": "kitchen"}
+        assert result.task_name == "keep"
+        assert result.recording_config_name == "sim"
+        assert result.tags == ["x"]
+        assert read_recording_meta(tmp_path) == result
+
+    def test_creates_meta_when_missing(self, tmp_path: Path) -> None:
+        """Older recording folders without recording_meta.json get a new file."""
+        result = merge_recording_metadata(tmp_path, {"target_object": "cup"})
+
+        assert result.metadata == {"target_object": "cup"}
+        assert read_recording_meta(tmp_path) == result

@@ -5,7 +5,11 @@
 - **Write comments and docstrings in English** (variable, function, and class names are also in English)
 - **Comments should describe "what the code does, its current responsibility, and design constraints"**. Do not describe the implementation history (e.g., "this used to be X", "abstracted because of duplication", "split during refactor"). History belongs in commit messages or PR descriptions; only the information a reader needs should remain in comments.
   - ❌ `// abstracted this because the same pattern existed in two routes`
-  - ✅ `// returns the list of recording folders as FileRow[]. The reference is stable via useMemo`
+  - ✅ `// the reference is stable via useMemo, so it is safe to use in useEffect deps`
+- **Do not write comments that merely restate the adjacent code**. A comment must add information the code cannot express on its own — a constraint, a unit, a non-obvious reason, or an external quirk. If deleting the comment loses nothing, do not write it. The same applies to docstrings that only repeat the function or class name.
+  - ❌ `# Enqueue the job` above `await queue.enqueue_quality(target)`
+  - ❌ `"""Return the global LogManager instance."""` on `get_log_manager()`
+  - ✅ `# Closing the pty master mid-recording causes EIO on the slave side`
 
 ## Python
 
@@ -27,6 +31,19 @@
   - Variables and functions you declare yourself remain camelCase (standard JS/TS convention)
   - Values derived from server responses (e.g., aggregated results) should be camelCase (e.g., `const lossRate = total > 0 ? loss_count / total : 0`)
   - Biome's `useNamingConvention` does not inspect property names by default, which is consistent with this policy
+
+## Hook / Variable Ordering in Routes and Components
+
+Inside a route/component, hooks and variables are ordered by the following sections. Skip sections that don't apply. Section dividers are a single-line `// --- XX ---` comment (no separator lines).
+
+1. **Routing** — `useNavigate`, `useParams`
+2. **Server state** — TanStack Query (`useFiles`, `useConfig`, etc.) and values derived from them (`useMemo`)
+3. **Streaming / subscription** — SSE (`useTopicsStream`, `useJobsStream`, etc.)
+4. **Side effects** — `useEffect` (any required `useRef` setup goes in this section)
+5. **Event handlers** — Define here only handlers that are used in multiple places, are memoized with `useCallback`, or have a long body. Inline single-use, non-memoized, short handlers into the JSX.
+6. **Render-only state** — store selects used only in JSX (`leftOpen` / `isRecording`, etc.)
+
+Within a section, group items "just before their use site". When the ordering rules need updating or a new section needs to be added, edit this section.
 
 ## Inlining Policy (TypeScript / React)
 

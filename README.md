@@ -19,7 +19,7 @@
 
 </div>
 
-> **Release status — pre-1.0 (v0.4.3).** APIs, data formats, and the CLI/UI may change without notice. Pin a specific version for any production use.
+> **Pre-1.0** — APIs, data formats, and the CLI/UI may change without notice; see [Release status](#release-status).
 
 > **Repository scope — pilot for MW, Inc.** This repository is a pilot / verification (PoC) repository maintained specifically for MW, Inc. General-purpose reusability as an OSS project is not a goal here; changes prioritize MW's concrete use case. For general-purpose, OSS-oriented work see the upstream OpenLUTRA project.
 
@@ -33,8 +33,8 @@ OpenLUTRA records ROS2 topics from ROS2-compatible robots and persists them as M
 
 ```
 Robot  ──ROS2 Topics──▶  FastAPI
-  /robot_slave/states (100Hz)     ├── subprocess: ros2 bag record → MCAP
-  /robot_master/cmd (100Hz)       ├── rclpy: frequency monitor + gap detection
+  /sim/slave_arm_left (100Hz)     ├── subprocess: ros2 bag record → MCAP
+  /sim/master_arm_left (100Hz)    ├── rclpy: frequency monitor + gap detection
   /*_depth_cam/.../compressed     └── SSE: real-time stream → Web UI
 ```
 
@@ -43,7 +43,7 @@ A hybrid architecture is used:
 | Function | Technology | Reason |
 |---|---|---|
 | Recording | `subprocess` (`ros2 bag record`) | Memory isolation; safe for long sessions |
-| Monitoring | `rclpy` (lightweight) | Real-time alerts; keeps only the latest N messages |
+| Monitoring | `rclpy` (lightweight) | Real-time alerts; keeps only the latest message per topic |
 | Quality analysis | `mcap` Python library | Accurate post-hoc metrics |
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for details.
@@ -128,15 +128,15 @@ Attach fixed attributes — operator ID, target object, and so on — to each re
 | [docs/STRUCTURE.md](docs/STRUCTURE.md) | Directory layout (backend / frontend / tests) |
 | [docs/SETUP.md](docs/SETUP.md) | Setup guide (prerequisites, dev, prod, env vars) |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Architecture (system, data flow, Docker) |
-| [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) | Development guide (style, branching, tests) |
+| [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) | Development guide (dev environments, testing, lint) |
 | [backend/README.md](backend/README.md) | Backend container layout (what a restart picks up, what needs a rebuild) |
 | [frontend/README.md](frontend/README.md) | Frontend container layout (what a restart picks up, what needs a rebuild) |
-| [docs/domain/](docs/domain/index.md) | Domain notes (ROS2, MCAP, LeRobot, quality analysis) |
+| [docs/domain/](docs/domain/index.md) | Domain notes (DDS gaps, quality analysis, validators, metadata, upload, LeRobot export, SSE) |
 | [examples/](examples/) | Reference snippets (e.g. plugging in custom ROS2 message types) |
 
 ## Release status
 
-OpenLUTRA is currently **v0.4.3** and follows the [SemVer](https://semver.org/) `0.y.z` convention: minor versions may include breaking changes until v1.0.0. Only the latest `main` is eligible for security fixes (see [SECURITY.md](./SECURITY.md)).
+OpenLUTRA is currently **v0.5.0** and follows the [SemVer](https://semver.org/) `0.y.z` convention: minor versions may include breaking changes until v1.0.0. Pin a specific version for any production use. Only the latest `main` is eligible for security fixes (see [SECURITY.md](./SECURITY.md)).
 
 Docker images are **not** published at this stage; the project is distributed as source.
 
@@ -151,11 +151,7 @@ Nothing on this list is committed — these are directions we are currently expl
 
 ## Support
 
-- **Questions about usage, configuration, or expected behavior** — ask in [Discussions → Q&A](https://github.com/fastlabel/open-lutra/discussions/categories/q-a).
-- **Bugs and feature requests** — file an [issue](https://github.com/fastlabel/open-lutra/issues/new/choose).
-- **Your setup or what you built with OpenLUTRA** — share it in [Discussions → Show and tell](https://github.com/fastlabel/open-lutra/discussions/categories/show-and-tell).
-- English or Japanese is fine for all of the above.
-- For security reports, see [SECURITY.md](./SECURITY.md) — please do not post them publicly.
+Questions go to [Discussions → Q&A](https://github.com/fastlabel/open-lutra/discussions/categories/q-a), bugs and feature requests to [Issues](https://github.com/fastlabel/open-lutra/issues/new/choose) — see [CONTRIBUTING.md](./CONTRIBUTING.md) for the full routing (Japanese or English welcome). For security reports, see [SECURITY.md](./SECURITY.md) — please do not post them publicly.
 
 ## Contributing
 

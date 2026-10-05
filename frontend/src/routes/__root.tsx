@@ -21,7 +21,7 @@ import { usePanelStore } from "@/stores/panel-store";
  * inside the Provider, so they cannot live in the same component as the Provider itself.
  */
 function RootLayoutInner() {
-  // Job queue SSE connection (shared by the preview panel and the future footer Jobs panel).
+  // Job queue SSE connection (shared by the preview panel and the StatusBar job pill).
   useJobsStream();
 
   return (
@@ -31,7 +31,6 @@ function RootLayoutInner() {
         <div className="flex-1 overflow-hidden">
           <Outlet />
         </div>
-        {/* StatusBar is shown only in dev mode (VITE_DEV_MODE=true). */}
         {isDevMode() && <StatusBar />}
       </div>
       <Toaster />

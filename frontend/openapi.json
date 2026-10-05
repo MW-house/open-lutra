@@ -3,7 +3,7 @@
   "info": {
     "title": "OpenLUTRA",
     "description": "ROS2 topic recorder for teleoperation robots (ROS2-standard topics)",
-    "version": "0.4.3"
+    "version": "0.5.0"
   },
   "paths": {
     "/api/recording/start": {
@@ -146,6 +146,46 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/DeleteResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "recordings"
+        ],
+        "summary": "Bulk Update Recording Meta",
+        "description": "Set metadata values on multiple recording folders in one call.\n\nEvery folder is resolved before anything is written, so a missing folder fails the whole request.",
+        "operationId": "bulkUpdateRecordingMeta",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BulkUpdateMetaRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BulkUpdateMetaResponse"
                 }
               }
             }
@@ -1533,6 +1573,50 @@
   },
   "components": {
     "schemas": {
+      "BulkUpdateMetaRequest": {
+        "properties": {
+          "folders": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Folders",
+            "description": "Names of recording folders to update"
+          },
+          "metadata": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Metadata",
+            "description": "Pre-registered metadata (key -> value) to set"
+          }
+        },
+        "type": "object",
+        "required": [
+          "folders",
+          "metadata"
+        ],
+        "title": "BulkUpdateMetaRequest",
+        "description": "Request body for PATCH /api/recordings.\n\nEach key in `metadata` is set on every folder; keys not present are left unchanged."
+      },
+      "BulkUpdateMetaResponse": {
+        "properties": {
+          "updated": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Updated"
+          }
+        },
+        "type": "object",
+        "required": [
+          "updated"
+        ],
+        "title": "BulkUpdateMetaResponse",
+        "description": "Response for PATCH /api/recordings."
+      },
       "BulkUploadRequest": {
         "properties": {
           "folders": {
@@ -2014,7 +2098,7 @@
           "type": {
             "type": "string",
             "title": "Type",
-            "description": "Job type (quality / timeline)"
+            "description": "Job type (media / quality / timeline / validation / lerobot_export / upload)"
           },
           "folder": {
             "type": "string",
