@@ -1,6 +1,7 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ConfigResponse, FileEntry, FilesResponse } from "@/api/generated/schemas";
+import { toast } from "@/stores/toast-store";
 import { RecordingCompletionBanner } from "../completion-banner";
 
 // Mock the API/log hooks and the recording store directly so the test does not depend on the
@@ -169,5 +170,39 @@ describe("RecordingCompletionBanner", () => {
       { name: "rec_001", data: { metadata: { task_evaluation: "success" } } },
       expect.objectContaining({ onError: expect.any(Function) }),
     );
+  });
+
+  it("highlights the selector in red only while failure is selected", () => {
+    filesMock.mockReturnValue({ data: { output_dir: "", entries: [makeEntry({ task_evaluation: "failure" })] } });
+    const { rerender } = render(<RecordingCompletionBanner />);
+    expect(screen.getByRole("combobox")).toHaveClass("text-red-100");
+
+    filesMock.mockReturnValue({ data: { output_dir: "", entries: [makeEntry({ task_evaluation: "success" })] } });
+    rerender(<RecordingCompletionBanner />);
+    expect(screen.getByRole("combobox")).not.toHaveClass("text-red-100");
+  });
+
+  it("toasts the saved value, using the red variant for failure", () => {
+    filesMock.mockReturnValue({ data: { output_dir: "", entries: [makeEntry({ task_evaluation: "success" })] } });
+    render(<RecordingCompletionBanner />);
+
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "failure" } });
+    mutateMock.mock.calls[0][1].onSuccess();
+    expect(toast.error).toHaveBeenCalledWith("Task evaluationを「失敗」に変更しました", "rec_001");
+
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "success" } });
+    mutateMock.mock.calls[1][1].onSuccess();
+    expect(toast.success).toHaveBeenCalledWith("Task evaluationを「成功」に変更しました", "rec_001");
+  });
+
+  it("logs and toasts a failed evaluation save", () => {
+    filesMock.mockReturnValue({ data: { output_dir: "", entries: [makeEntry({ task_evaluation: "success" })] } });
+    render(<RecordingCompletionBanner />);
+
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "failure" } });
+    mutateMock.mock.calls[0][1].onError(new Error("boom"));
+
+    expect(addLogMock).toHaveBeenCalledWith("danger", "Failed to update task evaluation (rec_001): boom");
+    expect(toast.error).toHaveBeenCalledWith("Metadata update failed", "boom");
   });
 });

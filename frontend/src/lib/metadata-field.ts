@@ -12,6 +12,9 @@ export const TASK_EVALUATION_KEY = "task_evaluation";
 /** Default value for {@link TASK_EVALUATION_KEY} (success). */
 export const TASK_EVALUATION_DEFAULT = "success";
 
+/** Failure value for {@link TASK_EVALUATION_KEY}; the completion banner highlights it in red. */
+export const TASK_EVALUATION_FAILURE = "failure";
+
 /**
  * Whether `value` satisfies the field's regex `pattern`.
  *
