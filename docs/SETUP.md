@@ -82,49 +82,13 @@ Open http://localhost:5173 in a browser. If the simulator's topics appear in the
 
 ### Frequently Used Commands
 
-| Command | Description |
-|----------|------|
-| `make up` | Start the development environment (with simulator) |
-| `make down` | Stop |
-| `make restart` | Restart (down + up) |
-| `make logs` | Tail logs in real time |
-| `make ps` | Show container status |
-| `make build` | Rebuild Docker images |
-| `make stream` | Inspect the SSE stream (for debugging) |
+Run `make help` for the full annotated target list (start/stop, logs, rebuild, SSE debugging, ...).
 
 ---
 
 ## Local Development Tools
 
-Tools that run on your local machine (not inside Docker):
-
-### Lint
-
-```bash
-make lint
-```
-
-Runs the following in order:
-1. `ruff check` - Python linter
-2. `mypy` - Python type checking
-3. `tsc --noEmit` - TypeScript type checking
-4. `biome check` - TypeScript lint + format check
-
-### Tests
-
-```bash
-make test
-```
-
-Runs pytest inside the Docker container (rclpy is required).
-
-### Formatting
-
-```bash
-make format
-```
-
-Runs the Python (ruff) and TypeScript (biome) code formatters.
+Lint (`make lint`), tests (`make test`), and formatting (`make format`) run on your local machine, not inside Docker. See [Lint and Type Checking](DEVELOPMENT.md#lint-and-type-checking) and [Testing](DEVELOPMENT.md#testing) in DEVELOPMENT.md for the tools and policies.
 
 ---
 
@@ -156,13 +120,7 @@ make prod-up
 
 In production, the environment starts with `network_mode: host`. This is required so that ROS2's DDS (peer-to-peer communication) can discover the real robot.
 
-### Production Commands
-
-| Command | Description |
-|----------|------|
-| `make prod-up` | Start the production environment (host network) |
-| `make prod-down` | Stop the production environment |
-| `make prod-logs` | Show production logs |
+Stop with `make prod-down`, tail logs with `make prod-logs` (see `make help` for the rest).
 
 ---
 
@@ -170,31 +128,11 @@ In production, the environment starts with `network_mode: host`. This is require
 
 ### Recording Configuration (YAML)
 
-Recording-specific configuration is managed in YAML files under the `config/` directory. Use `RECORDING_CONFIG` in `.env` to choose the file.
-
-```yaml
-# config/myrobot.yaml (example — copy config/simulator.yaml and adjust)
-robot_name: Robot
-ros_domain_id: 124
-recording_discovery_timeout: 10
-recording_start_delay_sec: 2.0   # Wait for the camera publish ramp-up (physical robot)
-monitor_qos_depth: 30
-stamp_quality: true   # Physical robot: judge quality based on header.stamp
-
-default_topics:
-  - /right_arm_depth_cam/color/image_raw/compressed
-  - /mcap/master_arm_right
-
-expected_hz_patterns:
-  - pattern: "**/compressed"
-    hz: 30
-  - pattern: "/mcap/*"
-    hz: 200
-```
+Recording-specific configuration is managed in YAML files under the `config/` directory. Use `RECORDING_CONFIG` in `.env` to choose the file. Copy [config/simulator.yaml](../config/simulator.yaml) as the template for your own robot — every option is documented inline there.
 
 | Preset | File | Use Case |
 |---|---|---|
-| Simulator (default) | `config/simulator.yaml` | 4 cameras (30Hz) + 2 joint-data channels (100Hz); also serves as a template for physical-robot recording configs |
+| Simulator (default) | `config/simulator.yaml` | 3 cameras (30Hz) + 5 joint/scalar topics (100Hz); also serves as a template for physical-robot recording configs |
 
 #### YAML Configuration Items
 
@@ -202,28 +140,14 @@ expected_hz_patterns:
 |---|---|
 | `robot_name` | Robot name displayed in the UI status bar |
 | `ros_domain_id` | ROS2 domain ID. Must match the robot's setting |
-| `recording_discovery_timeout` | Maximum number of seconds to wait for DDS discovery when starting a recording (0 disables it) |
-| `recording_start_delay_sec` | Additional seconds to wait after DDS discovery completes before sending SPACE to actually start recording. RealSense cameras and the like have a roughly one-second lag between subscribe confirmation and the first frame, so waiting for the ramp-up before starting eliminates the empty gap at the beginning of recordings (for real robots; default 0) |
+| `recording_discovery_timeout` | Maximum seconds to wait for DDS discovery when starting a recording (0 disables it) |
+| `recording_start_delay_sec` | Extra seconds to wait after DDS discovery before recording actually starts (absorbs camera publish ramp-up on real robots) |
 | `monitor_qos_depth` | QoS queue depth for topic-monitoring subscriptions |
-| `default_topics` | List of topic names recorded by default |
-| `expected_hz_patterns` | Expected Hz for quality monitoring. Specified by pattern (`fnmatch`); the first match wins |
-| `stamp_quality` | Whether the live-quality `loss_rate` is computed from `header.stamp` (for real robots, `true`) or by count (for the simulator, `false`). See [DDS Communication and Gaps](domain/dds_gap.md) for details |
-| `metadata_fields` | Optional pre-registered metadata fields (operator ID, target object, …) offered before recording. See [Pre-registered metadata](domain/metadata.md) for the field schema |
-
-`default_topics` can also be toggled individually in the UI's left panel. Hz is also automatically applied to dynamically discovered topics via `expected_hz_patterns`.
-
-#### Fixed vs Dynamically Learned Baseline Hz
-
-If you specify `hz` in `expected_hz_patterns`, the baseline is **fixed**; if you omit it, it is **dynamically learned** (calculated automatically from message intervals after subscribing):
-
-```yaml
-expected_hz_patterns:
-  - pattern: "**/compressed"
-    hz: 30                    # Fixed: monitor quality against a 30Hz baseline
-  - pattern: "/sensor/*"      # Dynamically learned: determines the baseline Hz from measured values
-```
-
-The UI shows an `auto` label on dynamically learned baselines (for example, `100/100Hz auto`). Hz values discovered through dynamic learning can be written back into YAML as fixed values for stable monitoring.
+| `default_topics` | List of topic names recorded by default (individually toggleable in the UI) |
+| `expected_hz_patterns` | Expected Hz per topic pattern (`fnmatch`; the first match wins, including dynamically discovered topics). With `hz` the baseline is fixed; without it, it is dynamically learned — see [Baseline Hz](domain/quality_analysis.md#baseline-hz) |
+| `stamp_quality` | Whether the live-quality `loss_rate` is computed from `header.stamp` (real robots: `true`). See [DDS Communication and Gaps](domain/dds_gap.md) |
+| `metadata_fields` | Pre-registered metadata fields (operator ID, target object, …) offered before recording. See [Pre-registered metadata](domain/metadata.md) |
+| `lerobot_export` | Topic mapping for LeRobot dataset export. See [LeRobot export](domain/lerobot_export.md) |
 
 ### Environment Variables (.env)
 
@@ -364,57 +288,9 @@ Match `LOCAL_UPLOAD_DIR` in `.env` to the container-side path of the bind-mount.
 
 ## Simulator
 
-In the development environment, the simulator publishes dummy data in place of a real robot.
+In the development environment, the simulator publishes dummy data (replayed joint trajectories and camera frames) in place of a real robot. It is started automatically by `make up` (via the `sim` profile in `docker-compose.yml`) and can be restarted with `make restart-sim` — with a fault-simulation mode when needed (e.g. `SIM_MODE=unstable make restart-sim`).
 
-### Published Topics
-
-| Topic | Type | Frequency |
-|---|---|---|
-| `/robot_slave/states` | JointState | 100 Hz |
-| `/robot_master/cmd` | JointState | 100 Hz |
-| `/right_arm_depth_cam/.../compressed` | CompressedImage | 30 Hz |
-| `/right_arm_depth_cam_2/.../compressed` | CompressedImage | 30 Hz |
-| `/left_arm_depth_cam/.../compressed` | CompressedImage | 30 Hz |
-| `/left_arm_depth_cam_2/.../compressed` | CompressedImage | 30 Hz |
-
-### How It Works
-
-- `simulator/robot_simulator.py` runs as an rclpy node
-- Publishes dummy data with the same topic names, message types, and frequencies as the real robot
-- JointState: joint angle values from a sine-wave motion
-- CompressedImage: replays sample JPEG frames extracted from real recordings in a loop
-
-### Fault Simulation Modes
-
-The `SIM_MODE` environment variable reproduces abnormal topic-publication patterns. Use it to verify the real-time monitoring UI and to debug.
-
-| Mode | Behavior |
-|---|---|
-| `normal` | Stable publishing (default) |
-| `unstable` | Random drops on some topics |
-| `topic_stop` | Stops publishing after N seconds |
-| `camera_empty` | Mixes empty frames (0 bytes) into the camera topics |
-| `burst` | Periodic gaps + DDS-burst-like continuous publishing |
-| `mixed` | A combination of the above (closest to the real robot) |
-
-```bash
-# Restart the simulator with a specific mode
-SIM_MODE=unstable make restart-sim
-
-# Parameters can also be specified
-SIM_MODE=topic_stop SIM_STOP_AFTER_SEC=10 make restart-sim
-```
-
-For the full list of environment variables, see [simulator/README.md](simulator/README.md).
-
-### Starting/Stopping the Simulator
-
-The simulator is started automatically by `make up` (via the `sim` profile in `docker-compose.yml`).
-
-```bash
-make restart-sim              # Restart only the simulator
-docker compose up -d          # Start without the simulator (omit --profile sim)
-```
+The published topics, fault-simulation modes, and all environment variables are documented in [simulator/README.md](../simulator/README.md).
 
 ---
 
@@ -453,3 +329,15 @@ make restart
 make build
 make restart
 ```
+
+### A Container Keeps Restarting After an Update
+
+The images carry the backend virtualenv and the frontend `node_modules`, so an image built before the update can disagree with the working tree it is started against. Rebuild, then start again:
+
+```bash
+make down
+make build
+make up
+```
+
+Which edits need a rebuild in the first place is listed per component in [backend/README.md](../backend/README.md#what-lands-where) and [frontend/README.md](../frontend/README.md#what-lands-where).

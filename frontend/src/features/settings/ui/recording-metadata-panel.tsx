@@ -45,7 +45,6 @@ export function RecordingMetadataPanel() {
         <div className="flex flex-col gap-3">
           {fields.map((field) => {
             const value = metadata[field.key] ?? "";
-            // Set (or clear, when empty) a single field, keeping the rest.
             const setValue = (v: string) => {
               const next = { ...metadata };
               if (v === "") delete next[field.key];
@@ -86,7 +85,6 @@ export function RecordingMetadataPanel() {
                     placeholder={field.placeholder ?? undefined}
                     aria-invalid={invalid}
                     onChange={(e) => {
-                      // Number fields accept digits only, kept as a string so leading zeros survive.
                       if (field.type === "number" && !/^[0-9]*$/.test(e.target.value)) return;
                       setValue(e.target.value);
                     }}

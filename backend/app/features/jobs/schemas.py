@@ -17,7 +17,6 @@ class JobProgressSchema(BaseModel):
 
     @classmethod
     def from_progress(cls, progress: JobProgress) -> "JobProgressSchema":
-        """Convert the domain model `JobProgress` into the API schema."""
         return cls(
             step=progress.step,
             step_label=progress.step_label,
@@ -30,7 +29,7 @@ class JobSchema(BaseModel):
     """API schema for a job."""
 
     job_id: str
-    type: str = Field(..., description="Job type (quality / timeline)")
+    type: str = Field(..., description="Job type (media / quality / timeline / validation / lerobot_export / upload)")
     folder: str
     status: str = Field(..., description="Job status (queued / running / completed / failed)")
     progress: JobProgressSchema
@@ -41,7 +40,6 @@ class JobSchema(BaseModel):
 
     @classmethod
     def from_job(cls, job: Job) -> "JobSchema":
-        """Convert the domain model `Job` into the API schema."""
         return cls(
             job_id=job.job_id,
             type=job.type.value,

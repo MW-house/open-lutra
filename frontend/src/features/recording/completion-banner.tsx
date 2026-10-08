@@ -20,7 +20,8 @@ import { Button } from "@/components/ui/button";
 import { useConfig, useDeleteRecordings, useFiles, useUpdateRecordingMeta } from "@/hooks/use-api";
 import { useAddLog } from "@/hooks/use-topics-stream";
 import { formatDuration, formatSize } from "@/lib/format";
-import { TASK_EVALUATION_DEFAULT, TASK_EVALUATION_KEY } from "@/lib/metadata-field";
+import { TASK_EVALUATION_DEFAULT, TASK_EVALUATION_FAILURE, TASK_EVALUATION_KEY } from "@/lib/metadata-field";
+import { cn } from "@/lib/utils";
 import { toast } from "@/stores/toast-store";
 import { useRecordingStore } from "./store";
 import { useEvaluationShortcut } from "./use-evaluation-shortcut";
@@ -65,13 +66,19 @@ export function RecordingCompletionBanner() {
 
   // Persist a task-evaluation change, merging over the recording's existing metadata so the
   // pre-recording fields survive the whole-map PATCH. Hoisted above the early return so the
-  // keyboard shortcut can reuse it.
+  // keyboard shortcut can reuse it. A toast confirms the saved value, since the E shortcut changes
+  // it without the operator looking at the selector; failure uses the red variant to stand out.
   const saveEvaluation = (next: string) => {
     if (!finished || !entry) return;
     setOverride({ name: finished.name, value: next });
     updateMeta.mutate(
       { name: finished.name, data: { metadata: { ...entry.metadata, [TASK_EVALUATION_KEY]: next } } },
       {
+        onSuccess: () => {
+          const label = evalField?.options.find((o) => o.value === next)?.label ?? next;
+          const title = `${evalField?.label ?? TASK_EVALUATION_KEY}を「${label}」に変更しました`;
+          (next === TASK_EVALUATION_FAILURE ? toast.error : toast.success)(title, finished.name);
+        },
         onError: (err: unknown) => {
           const msg = err instanceof Error ? err.message : "Update failed";
           addLog("danger", `Failed to update task evaluation (${finished.name}): ${msg}`);
@@ -84,6 +91,8 @@ export function RecordingCompletionBanner() {
   // The selector's current value, also the value the keyboard shortcut cycles from.
   const currentEvaluation =
     (override?.name === finished?.name ? override?.value : undefined) ?? storedEvaluation ?? TASK_EVALUATION_DEFAULT;
+
+  const isFailure = currentEvaluation === TASK_EVALUATION_FAILURE;
 
   // Keyboard shortcut: E cycles the evaluation without reaching for the mouse. Gated on the same
   // conditions as the selector (a save in flight disables both).
@@ -135,16 +144,22 @@ export function RecordingCompletionBanner() {
         <span className="text-emerald-400/70">{meta.join(" · ")}</span>
       </div>
 
-      {/* Task evaluation (post-recording judgement), defaulting to success. */}
+      {/* Task evaluation (post-recording judgement), defaulting to success. Failure is shown in red
+          so a take marked as failed is recognizable at a glance. */}
       {evalField && (
-        <label className="flex flex-none items-center gap-1.5 text-emerald-200">
+        <label className={cn("flex flex-none items-center gap-1.5", isFailure ? "text-red-300" : "text-emerald-200")}>
           <span className="whitespace-nowrap">{evalField.label}</span>
           <div className="relative">
             <select
               value={currentEvaluation}
               disabled={!entry || updateMeta.isPending}
               onChange={(e) => saveEvaluation(e.target.value)}
-              className="appearance-none rounded-md border border-emerald-500/30 bg-transparent py-1 pr-6 pl-2 text-[13px] text-emerald-100 cursor-pointer focus:outline-none focus:ring-1 focus:ring-emerald-400/50 disabled:cursor-not-allowed disabled:opacity-40"
+              className={cn(
+                "appearance-none rounded-md border py-1 pr-6 pl-2 text-[13px] cursor-pointer focus:outline-none focus:ring-1 disabled:cursor-not-allowed disabled:opacity-40",
+                isFailure
+                  ? "border-red-500/60 bg-red-500/20 font-semibold text-red-100 focus:ring-red-400/50"
+                  : "border-emerald-500/30 bg-transparent text-emerald-100 focus:ring-emerald-400/50",
+              )}
             >
               {evalField.options.map((opt) => (
                 <option key={opt.value} value={opt.value} className="bg-background text-foreground">
@@ -154,7 +169,10 @@ export function RecordingCompletionBanner() {
             </select>
             <ChevronDown
               size={13}
-              className="pointer-events-none absolute top-1/2 right-1.5 -translate-y-1/2 text-emerald-300"
+              className={cn(
+                "pointer-events-none absolute top-1/2 right-1.5 -translate-y-1/2",
+                isFailure ? "text-red-300" : "text-emerald-300",
+              )}
             />
           </div>
           {/* Hint for the keyboard shortcut that cycles the value (see use-evaluation-shortcut). */}

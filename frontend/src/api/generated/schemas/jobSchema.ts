@@ -3,7 +3,7 @@
  * Do not edit manually.
  * OpenLUTRA
  * ROS2 topic recorder for teleoperation robots (ROS2-standard topics)
- * OpenAPI spec version: 0.4.3
+ * OpenAPI spec version: 0.5.0
  */
 import type { JobProgressSchema } from './jobProgressSchema.ts';
 
@@ -12,7 +12,7 @@ import type { JobProgressSchema } from './jobProgressSchema.ts';
  */
 export interface JobSchema {
   job_id: string;
-  /** Job type (quality / timeline) */
+  /** Job type (media / quality / timeline / validation / lerobot_export / upload) */
   type: string;
   folder: string;
   /** Job status (queued / running / completed / failed) */

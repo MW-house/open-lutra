@@ -3,9 +3,12 @@
  * Do not edit manually.
  * OpenLUTRA
  * ROS2 topic recorder for teleoperation robots (ROS2-standard topics)
- * OpenAPI spec version: 0.4.3
+ * OpenAPI spec version: 0.5.0
  */
 
+export * from './bulkUpdateMetaRequest.ts';
+export * from './bulkUpdateMetaRequestMetadata.ts';
+export * from './bulkUpdateMetaResponse.ts';
 export * from './bulkUploadRequest.ts';
 export * from './bulkUploadResponse.ts';
 export * from './bulkUploadResultItem.ts';

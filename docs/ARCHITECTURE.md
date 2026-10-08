@@ -16,12 +16,6 @@
 
 ---
 
-## Tech Stack
-
-→ See [TECH_STACK.md](TECH_STACK.md).
-
----
-
 ## Overview
 
 ```
@@ -98,7 +92,7 @@ This system adopts a "hybrid architecture" that combines three different technol
 
 **Why use a subprocess for recording**: `ros2 bag record` is a C++ optimized tool that runs stably even with high-frequency, high-volume data. If Python (rclpy) received and stored every message, memory would grow and risk crashing during long recordings. Delegating to a subprocess fully isolates the recording process's memory from the application's.
 
-**Why use rclpy for monitoring**: Real-time topic subscription requires ROS2 DDS communication. Running as an rclpy node enables automatic topic discovery (DDS discovery) and message reception. Unlike recording, however, it is designed to be lightweight — keeping only the latest 600 entries.
+**Why use rclpy for monitoring**: Real-time topic subscription requires ROS2 DDS communication. Running as an rclpy node enables automatic topic discovery (DDS discovery) and message reception. Unlike recording, however, it is designed to be lightweight — keeping only the latest message per topic.
 
 **Why use the mcap library for quality analysis**: Real-time data during recording is only approximate. Analyzing the MCAP file directly after recording lets us compute accurate quality metrics from every message's timestamp.
 
@@ -144,7 +138,7 @@ Runs as a ROS2 node in a background thread.
 
 - **Automatic topic discovery**: Scans the ROS2 network every 5 seconds
 - **QoS auto-matching**: Detects publisher QoS and auto-adjusts subscriber QoS
-- **Lightweight subscription**: Keeps only the latest 600 entries per topic in a `deque(maxlen=600)`
+- **Lightweight subscription**: Keeps only the latest message per topic (no history buffer)
 - **Frequency monitoring**: Measured Hz from message intervals + auto-learns the reference Hz after 50 entries
 - **Gap detection**: Records gaps that exceed 3× the expected interval
 - **Quality metrics**: Computes `loss_rate` and `continuity_score` in real time
@@ -174,7 +168,7 @@ Located in `backend/app/features/analysis/`. Provides data for the horizontal-ba
 
 Located in `backend/app/features/media/`. Generates data for the Preview panel (video + Joint Position Graph) of the recording detail page.
 
-- **mcap_converter**: `convert_mcap()` generates per-camera MP4s from MCAP (streams writes to an ffmpeg subprocess, piping one frame at a time so memory use stays constant regardless of recording length, fixed 30fps). This is the actual `GenerateMediaJob`
+- **mcap_converter**: `convert_mcap()` generates per-camera MP4s from MCAP (streams writes to an ffmpeg subprocess, piping one frame at a time so memory use stays constant regardless of recording length). This is the actual `GenerateMediaJob`
 - **video_generator**: Enumerates already-generated MP4 files (GET /api/media/video) and defines the fixed FPS constant
 - **joint_reader**: Reads + caches Joint time-series (for the Joint Position Graph). Auto-detects whether `decoded.position` exists or is nested (`decoded.joint_state.position`), supporting custom message types (including composite types that also expose `neck_joint_state`)
 - **Decimation support**: `decimation=20` or so is sufficient for previews (200Hz × 50s = 10,000 → 500 points)
@@ -194,16 +188,17 @@ Implemented in `backend/app/features/jobs/`. Runs heavy work such as MCAP conver
 
 ```
 JobQueue (asyncio.Queue + single worker)
-  ├─ media     : MCAP → MP4 (all cameras) + joint_data.json
-  ├─ timeline  : MCAP → timeline_data.json
-  ├─ quality   : MCAP → quality_report.json
-  ├─ validation: QualityReport → validation_result.json
-  └─ upload    : recording folder → zip → ship to UploadDestination
+  ├─ media         : MCAP → MP4 (all cameras) + joint_data.json
+  ├─ timeline      : MCAP → timeline_data.json
+  ├─ quality       : MCAP → quality_report.json
+  ├─ validation    : QualityReport → validation_result.json
+  ├─ lerobot_export: selected recordings → LeRobot v3.0 dataset
+  └─ upload        : recording folder → zip → ship to UploadDestination
 ```
 
 - **Single worker**: At most one job runs concurrently. Running multiple CPU-bound MCAP conversions/analyses at once would actually slow things down
 - **Duplicate prevention**: The same folder + same type is deduplicated
-- **Progress over SSE**: `/api/jobs/stream` broadcasts `queue_snapshot` / `job_added` / `job_started` / `job_progress` / `job_completed` / `job_failed` events
+- **Progress over SSE**: `/api/jobs/stream` broadcasts job lifecycle events (see [SSE streams](domain/sse.md))
 - **Log-only on failure**: Does not retry; moves on to the next job. Failed jobs are shown in the Jobs panel
 - **Auto-chain**: When a recording stops, both a quality job and a validation job are enqueued. The single-worker FIFO guarantees validation runs *after* the quality report it depends on exists
 
@@ -221,11 +216,8 @@ ValidationRunner.run(report, recording_dir, mcap_path, recording_meta)
   └─► ValidationReport (overall_status + per-validator items)
 ```
 
-- **Context-driven**: Validators receive a `ValidationContext` carrying the `QualityReport`, the recording folder, the MCAP file path, and the parsed `recording_meta.json`. Light validators read only `ctx.report`; validators that need raw frames open `ctx.mcap_path` with `MCAPReader` from `app.infra.mcap`
-- **Builtin vs. custom**: Builtin validators ship in `builtins/` and accept constructor params via `active_set.py`. Custom validators live in `custom/`, are decorated with `@register_validator`, and are auto-discovered at startup via `pkgutil.iter_modules`
 - **Exception isolation**: When a validator raises, the runner converts the failure into `status="error"` for that one validator — other validators still run, the app does not crash
-- **Output**: `validation_result.json` next to `quality_report.json`. `FileEntry.validation_overall_status` exposes the aggregated pass/warn/fail/error for the recordings list badge
-- **How to add a custom validator**: see [docs/domain/custom_validators.md](domain/custom_validators.md)
+- See [Custom validators](domain/custom_validators.md) for the `ValidationContext` contract, the builtin/custom split, and how to add a validator
 
 ### Application Lifecycle
 
@@ -296,20 +288,7 @@ Two state-management approaches are used:
 
 ### Real-time updates via SSE (Server-Sent Events)
 
-```
-SSE (/api/topics/stream)
-  ├─ topic_stats event (every second)
-  │   └─ queryClient.setQueryData(sseKeys.topicStats(), data)
-  └─ log event (as they occur)
-      └─ queryClient.setQueryData(sseKeys.logs(), ...)
-
-SSE (/api/jobs/stream)
-  ├─ queue_snapshot (on connect)
-  ├─ job_added / job_started / job_progress / job_completed / job_failed
-  └─ Reflects timeline / quality generation status on the MCAP detail page into the cache
-```
-
-When an SSE event arrives, the TanStack Query cache is updated directly. This lets the UI reflect updates in real time without polling. `/api/jobs/stream` broadcasts progress for background jobs (MCAP → MP4 conversion / quality analysis / timeline generation).
+`/api/topics/stream` (topic stats + logs) and `/api/jobs/stream` (background-job progress) push events whose payloads are written directly into the TanStack Query cache (`queryClient.setQueryData(sseKeys...)`), so the UI reflects updates in real time without polling. See [SSE streams](domain/sse.md) for the endpoint and event catalog.
 
 ### Pages and Panel Layout
 
@@ -501,9 +480,9 @@ Image topics (CompressedImage):
                 ← on_message: bytes(msg.data)
 
 Sensor topics (JointState, etc.):
-  Browser (30fps polling) ← GET /api/topics/live/positions?topic=...
-                          ← TopicMonitor._live_positions (swaps the array)
-                          ← on_message: list(msg.position)
+  Browser ← SSE (30fps) ← GET /api/topics/live/stream?topic=...
+                        ← TopicMonitor._live_positions (swaps the array)
+                        ← on_message: list(msg.position)
 ```
 
 | Item | Image | Sensor |
@@ -560,16 +539,19 @@ Sensor topics (JointState, etc.):
 
 ## Output Format
 
-Recording data is saved in the following structure:
+Recording data is saved in the following structure. The folder name is `{task}_{timestamp}` when a task name is set, `{timestamp}` otherwise:
 
 ```
 output/
-└── {timestamp}/                     # e.g. 20260308_150000
-    ├── {timestamp}_0.mcap           # MCAP file generated by ros2 bag record
-    ├── metadata.yaml                # Metadata generated by ros2 bag record
-    └── quality_report.json          # Generated by the quality analysis engine (after recording stops)
+├── {task}_{timestamp}/                    # e.g. pick_place_20260308_150000
+│   ├── *_0.mcap                           # MCAP file generated by ros2 bag record
+│   ├── metadata.yaml                      # Metadata generated by ros2 bag record (used by `ros2 bag info`)
+│   ├── recording_meta.json                # Task name, tags, and pre-registered metadata
+│   ├── quality_report.json                # Quality analysis result (cache)
+│   ├── validation_result.json             # Validation result (cache)
+│   ├── timeline_data.json                 # Timeline analysis result (cache)
+│   ├── joint_data*.json                   # Joint preview data (cache; decimation-suffixed variants)
+│   ├── observation.images.{camera}.mp4    # Per-camera preview videos (generated on first preview)
+│   └── upload_state.json                  # Upload history/state (created once uploaded)
+└── _lerobot_exports/                      # LeRobot dataset exports (reserved; skipped by the recordings scanner)
 ```
-
-- **MCAP file**: Message data for all topics (with timestamps)
-- **metadata.yaml**: Topic list, message counts, recording duration (used by `ros2 bag info`)
-- **quality_report.json**: Per-topic quality metrics (stored as a cache)

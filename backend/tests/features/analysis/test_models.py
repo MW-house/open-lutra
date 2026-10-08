@@ -174,11 +174,6 @@ class TestFromMcapData:
         assert tq.loss_rate == 0.0
 
 
-# ---------------------------------------------------------------------------
-# LossEvent (IQR-based loss detection)
-# ---------------------------------------------------------------------------
-
-
 class TestLossEvents:
     """Tests for TopicQuality._detect_loss_events()."""
 
@@ -264,8 +259,7 @@ class TestLossEvents:
     def test_loss_events_sorted_by_timestamp_with_edge_loss(self) -> None:
         """When edge losses (start_delay/end_early) coexist with intermediate gaps, events are ordered by timestamp ascending.
 
-        Regression: before the fix, edge_events were prepended, so end_early appeared before intermediate gaps
-        (i.e., at the head of the array). This caused the order to drift away from the UI timeline.
+        Guards the UI timeline order: end_early must not appear before intermediate gaps.
         """
         # 30 Hz (33 ms interval), 10 s recording
         # 1 s start delay (start_delay) + 1 intermediate gap (~7 s mark) + ~1.5 s early end (end_early)
@@ -287,14 +281,11 @@ class TestLossEvents:
             timestamp_source="header_stamp",
         )
 
-        # Should have at least 3 events (start_delay / intermediate gap / end_early)
         assert len(tq.loss_events) >= 3
 
-        # Ensure timestamp_sec values are in ascending order (monotonically increasing)
         timestamps_in_order = [le.timestamp_sec for le in tq.loss_events]
         assert timestamps_in_order == sorted(timestamps_in_order)
 
-        # Head is start_delay (timestamp_sec = 0)
         assert tq.loss_events[0].timestamp_sec == 0.0
 
         # Tail is end_early (max timestamp_sec ~ 8.2, just before the 10 s recording end)

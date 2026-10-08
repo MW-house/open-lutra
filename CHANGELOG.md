@@ -4,17 +4,15 @@ All notable changes to OpenLUTRA are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
-While the major version is `0`, minor releases may include breaking changes.
+While the major version is `0`, minor releases may include breaking changes — see
+[Release status](README.md#release-status) in the README for the current stability
+and distribution policy.
 
 ## [0.2.0] - 2026-06-19
 
 This release adds two major capabilities — uploading recordings to an external
 storage destination and exporting them to the LeRobot dataset format — alongside
 validation and configuration improvements.
-
-> **Beta release.** APIs, data formats, configuration, and the web UI may
-> change without notice until v1.0.0. Docker images are not published at this
-> stage; the project is distributed as source.
 
 ### Added
 
@@ -39,7 +37,7 @@ validation and configuration improvements.
 
 ### Changed
 
-- `ROBOT_CONFIG` and `OUTPUT_DIR` are now required in `.env`; the backend fails
+- `RECORDING_CONFIG` and `OUTPUT_DIR` are now required in `.env`; the backend fails
   fast when they are unset. See [docs/SETUP.md](docs/SETUP.md).
 - Task-name validation errors are surfaced inline in the recording header editor.
 - Polished the recording page layout (relocated the Stop toggle, made the
@@ -54,10 +52,6 @@ validation and configuration improvements.
 
 Initial public release of OpenLUTRA — a ROS2 data-recording system for robot
 teaching and teleoperation workflows.
-
-> **Beta release.** APIs, data formats, configuration, and the web UI may
-> change without notice until v1.0.0. Docker images are not published at this
-> stage; the project is distributed as source.
 
 ### Added
 

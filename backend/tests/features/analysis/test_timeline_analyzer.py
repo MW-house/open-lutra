@@ -24,10 +24,6 @@ from app.features.analysis.timeline_analyzer import (
     load_timeline,
 )
 
-# ---------------------------------------------------------------------------
-# _estimate_hz
-# ---------------------------------------------------------------------------
-
 
 class TestEstimateHz:
     """Tests for _estimate_hz()."""
@@ -63,11 +59,6 @@ class TestEstimateHz:
         assert _estimate_hz(timestamps) == 10.0
 
 
-# ---------------------------------------------------------------------------
-# _calc_bin_width
-# ---------------------------------------------------------------------------
-
-
 class TestCalcBinWidth:
     """Tests for _calc_bin_width()."""
 
@@ -96,11 +87,6 @@ class TestCalcBinWidth:
         assert result > 0
         # Fits within 1800 bins
         assert 3600.0 / result <= 1800
-
-
-# ---------------------------------------------------------------------------
-# _detect_edge_loss_for_timeline
-# ---------------------------------------------------------------------------
 
 
 class TestDetectEdgeLossForTimeline:
@@ -178,11 +164,6 @@ class TestDetectEdgeLossForTimeline:
         assert len(events) == 2
 
 
-# ---------------------------------------------------------------------------
-# _detect_loss_events_for_timeline
-# ---------------------------------------------------------------------------
-
-
 class TestDetectLossEventsForTimeline:
     """Tests for _detect_loss_events_for_timeline()."""
 
@@ -225,11 +206,6 @@ class TestDetectLossEventsForTimeline:
         events = _detect_loss_events_for_timeline(timestamps, 0.033, 100.0)
         # Coordinates are relative
         assert all(e[0] < 5.0 for e in events)
-
-
-# ---------------------------------------------------------------------------
-# _build_timeline
-# ---------------------------------------------------------------------------
 
 
 class TestBuildTimeline:
@@ -373,8 +349,7 @@ class TestBuildTimeline:
     def test_gaps_sorted_by_start_sec(self) -> None:
         """gaps are sorted by start_sec ascending (preserved even when edge loss coexists with intermediate gaps).
 
-        Regression: edge_events used to be prepended, so end_early would appear before
-        intermediate gaps, breaking the UI display order.
+        Guards the UI display order: end_early must not appear before intermediate gaps.
         """
         # 30 Hz, 10 s recording. 1 s start_delay + 1 intermediate gap (~7 s mark) + ~1.5 s end_early
         interval = 1 / 30.0
@@ -390,16 +365,9 @@ class TestBuildTimeline:
             {},
         )
         cam_topic = next(t for t in data.topics if t.name == "/cam")
-        # There should be at least 3 gaps (start_delay / intermediate / end_early)
         assert len(cam_topic.gaps) >= 3
-        # start_sec should be sorted ascending
         starts = [g.start_sec for g in cam_topic.gaps]
         assert starts == sorted(starts)
-
-
-# ---------------------------------------------------------------------------
-# load_timeline
-# ---------------------------------------------------------------------------
 
 
 class TestLoadTimeline:
@@ -444,11 +412,6 @@ class TestLoadTimeline:
         """Schema mismatch returns None."""
         (tmp_path / "timeline_data.json").write_text(json.dumps({"foo": "bar"}))
         assert load_timeline(tmp_path) is None
-
-
-# ---------------------------------------------------------------------------
-# TimelineAnalyzer (lifecycle management)
-# ---------------------------------------------------------------------------
 
 
 class TestTimelineAnalyzer:

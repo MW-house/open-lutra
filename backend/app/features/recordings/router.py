@@ -6,9 +6,11 @@ import shutil
 from fastapi import APIRouter, HTTPException, status
 
 from app.dependencies import require_dir, resolve_safe_path
-from app.features.recordings.meta import update_recording_meta
+from app.features.recordings.meta import merge_recording_metadata, update_recording_meta
 from app.features.recordings.scanner import collect_recent_task_names, scan_output_dir
 from app.features.recordings.schemas import (
+    BulkUpdateMetaRequest,
+    BulkUpdateMetaResponse,
     DeleteRequest,
     DeleteResponse,
     FilesResponse,
@@ -69,7 +71,6 @@ def rename_recording(req: RenameRequest) -> RenameResponse:  # pragma: no cover
             text = text.replace(req.old_name, req.new_name)
             meta.write_text(text, encoding="utf-8")
 
-        # Rename the folder itself.
         old_dir.rename(new_dir)
     except OSError as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Rename failed: {e}") from e
@@ -96,6 +97,18 @@ def update_recording_meta_endpoint(name: str, req: UpdateMetaRequest) -> UpdateM
         tags=updated.tags,
         metadata=updated.metadata,
     )
+
+
+@router.patch("", response_model=BulkUpdateMetaResponse, operation_id="bulkUpdateRecordingMeta")
+def bulk_update_recording_meta(req: BulkUpdateMetaRequest) -> BulkUpdateMetaResponse:  # pragma: no cover
+    """Set metadata values on multiple recording folders in one call.
+
+    Every folder is resolved before anything is written, so a missing folder fails the whole request.
+    """
+    targets = [require_dir(resolve_safe_path(path=folder)) for folder in req.folders]
+    for target in targets:
+        merge_recording_metadata(target, req.metadata)
+    return BulkUpdateMetaResponse(updated=req.folders)
 
 
 @router.delete("", response_model=DeleteResponse, operation_id="deleteRecordings")
