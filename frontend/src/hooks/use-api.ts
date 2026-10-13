@@ -20,7 +20,7 @@ import {
   useStartQualityAnalysis as useStartQualityAnalysisGenerated,
   useStartTimelineAnalysis as useStartTimelineAnalysisGenerated,
 } from "@/api/generated/analysis/analysis";
-import { useGetConfig, useGetMemory } from "@/api/generated/config/config";
+import { getGetStorageQueryKey, useGetConfig, useGetMemory, useGetStorage } from "@/api/generated/config/config";
 import { useGetLeRobotConfig } from "@/api/generated/lerobot/lerobot";
 import {
   getGetVideoStatusQueryKey,
@@ -44,6 +44,7 @@ import type {
   MemoryInfo,
   QualityResponse,
   RecordingStatus,
+  StorageInfo,
   TaskNamesResponse,
   TopicsResponse,
   UploadResponse,
@@ -162,6 +163,9 @@ export function useDeleteRecordings() {
     mutation: {
       onSuccess: () => {
         queryClient.invalidateQueries({ queryKey: getGetRecordingsQueryKey() });
+        // Deleting is the one operation that gives space back, so the free-space
+        // readout would otherwise stay at its pre-delete value.
+        queryClient.invalidateQueries({ queryKey: getGetStorageQueryKey() });
       },
     },
   });
@@ -192,6 +196,21 @@ export function useBulkUpdateRecordingMeta() {
 }
 
 // --- On-demand queries (used by specific screens / actions) ---
+
+/** Fetch the capacity of the volume that holds the recordings.
+ *
+ * Intentionally never polled. The value refreshes when a screen showing it
+ * mounts, when a job finishes writing to the volume (see use-jobs-stream.ts),
+ * when recordings are deleted, and on an explicit refetch — so an in-progress
+ * recording is never competing with periodic background requests.
+ */
+export function useStorage() {
+  return useGetStorage<StorageInfo>({
+    query: {
+      select: (resp) => resp.data as StorageInfo,
+    },
+  });
+}
 
 /** Fetch the list of recording folders directly under the output directory.
  *

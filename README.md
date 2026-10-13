@@ -115,7 +115,7 @@ Attach fixed attributes — operator ID, target object, and so on — to each re
 ### Recording workflow
 
 1. **Select topics** — check the topics you want to record in the left panel (ROS2 topics are auto-discovered).
-2. **Start recording** — press the record button.
+2. **Start recording** — press the record button. Before a long take, check the free space left on the output volume shown in the recording bar; it is re-read after each analysis job and deletion, or on demand with its refresh button (never polled).
 3. **Monitor live** — watch per-topic Hz and miss% in the left panel; the bottom Missing Rate graph shows the time series.
 4. **Stop recording** — press the record button again. Quality analysis runs automatically.
 5. **Review** — open the recordings page or the MCAP detail page to inspect per-topic metrics (loss rate, continuity score).
