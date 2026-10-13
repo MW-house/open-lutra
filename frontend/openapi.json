@@ -3102,6 +3102,10 @@
           "qos_reliability": {
             "type": "string",
             "title": "Qos Reliability"
+          },
+          "silent_sec": {
+            "type": "number",
+            "title": "Silent Sec"
           }
         },
         "type": "object",
@@ -3117,7 +3121,8 @@
           "loss_rate",
           "drop_count",
           "continuity_score",
-          "qos_reliability"
+          "qos_reliability",
+          "silent_sec"
         ],
         "title": "TopicInfo",
         "description": "Information about a monitored topic."

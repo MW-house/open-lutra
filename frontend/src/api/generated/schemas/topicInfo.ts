@@ -22,4 +22,5 @@ export interface TopicInfo {
   drop_count: number;
   continuity_score: number;
   qos_reliability: string;
+  silent_sec: number;
 }

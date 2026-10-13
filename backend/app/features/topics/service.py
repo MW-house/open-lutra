@@ -392,6 +392,7 @@ class TopicMonitorService:
             is_subscribed=True,
             _gap_threshold_sec=self._gap_threshold_sec,
             stamp_quality=self._stamp_quality,
+            _monitor_started_at=time.monotonic(),
         )
 
         # Resolve the expected Hz from the YAML config (fixed baseline).
@@ -452,6 +453,7 @@ class TopicMonitorService:
         stats._last_loss_rate = 0.0
         stats._last_drop_count = 0
         stats._last_msg_time = 0.0
+        stats._monitor_started_at = time.monotonic()
         stats._last_stamp = 0.0
         stats._stamp_window_start = 0.0
         stats._stamp_loss_count = 0

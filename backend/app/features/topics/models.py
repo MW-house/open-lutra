@@ -136,6 +136,8 @@ class TopicStats:
     _learner: BaselineLearner = field(default_factory=BaselineLearner, repr=False)
     # Last received time (used for gap detection across all modes)
     _last_msg_time: float = field(default=0.0, repr=False)
+    # Monotonic instant monitoring of this topic (re)started; silence before the first message is measured from here
+    _monitor_started_at: float = field(default=0.0, repr=False)
     # On-demand message capture (flag is raised on API request; the next received message is converted)
     _capture_next: bool = field(default=False, repr=False)
     # For continuous image MJPEG streaming / sensor SSE streaming
@@ -150,6 +152,7 @@ class TopicStats:
     _cached_at: float = field(default=0.0, repr=False)
     # status cache (avoids being recomputed multiple times inside to_api)
     _cached_status: str = field(default="inactive", repr=False)
+    _cached_silent_sec: float = field(default=0.0, repr=False)
 
     def on_stamp(self, now: float, stamp: float | None) -> None:
         """Update quality metrics on message receipt.
@@ -190,6 +193,7 @@ class TopicStats:
         if self._hz_count_start > 0.0 and now - self._hz_count_start > _HZ_WINDOW_SEC:
             self.start_hz_window(now)
         self._cached_status = self._compute_status(now)
+        self._cached_silent_sec = self._compute_silent_sec(now)
         if self._cached_status == "danger":
             self._last_loss_rate = 0.0
             self._last_drop_count = 0
@@ -269,6 +273,7 @@ class TopicStats:
             drop_count=self._last_drop_count,
             continuity_score=round(self.continuity_score, 3),
             qos_reliability=self.qos_reliability,
+            silent_sec=round(self._cached_silent_sec, 1),
         )
 
     def _compute_actual_hz(self, now: float) -> float:
@@ -328,6 +333,13 @@ class TopicStats:
         if elapsed >= _LOSS_RATE_WINDOW_SEC:
             self._window_start = now
             self._window_count = 0
+
+    def _compute_silent_sec(self, now: float) -> float:
+        """Seconds without a message: since the last one, or since monitoring started if none arrived yet."""
+        origin = self._last_msg_time or self._monitor_started_at
+        if origin == 0.0:
+            return 0.0
+        return max(0.0, now - origin)
 
     def _compute_status(self, now: float) -> str:
         if self.message_count == 0:

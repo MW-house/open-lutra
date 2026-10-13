@@ -5,7 +5,7 @@ import { useEffect, useRef } from "react";
 import { Group, Panel } from "react-resizable-panels";
 import { updateSubscriptions } from "@/api/generated/topics/topics";
 import { ResizeHandleH, ResizeHandleV } from "@/components/ui/resize-handle";
-import { LiveTopicPreview, LiveTopics, useLiveTopicsStore } from "@/features/live-topics";
+import { LiveTopicPreview, LiveTopics, TopicFailureAlert, useLiveTopicsStore } from "@/features/live-topics";
 import { MonitorTabs, MonitorTabsHeader } from "@/features/monitor";
 import { RecordingCompletionBanner, RecordingControl, useRecordingStore } from "@/features/recording";
 import { useConfig, useIsRecording } from "@/hooks/use-api";
@@ -60,6 +60,7 @@ function RecorderPage() {
     <div className="flex h-full flex-col bg-background">
       <RecordingControl />
       <RecordingCompletionBanner />
+      <TopicFailureAlert />
       <div className="flex-1 overflow-hidden">
         {topicsSidebarOpen ? (
           <Group orientation="horizontal" style={{ height: "100%" }}>

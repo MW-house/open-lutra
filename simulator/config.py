@@ -7,6 +7,8 @@ SIM_MODE:
   camera_empty — Keep publishing camera topics but make some frames empty (0 bytes)
   burst        — Periodic gap + DDS-burst-style consecutive sends
   mixed        — unstable + topic_stop + camera_empty combined (closest to real hardware)
+  outage       — Repeat a short stop / long stop cycle on the specified topics (exercises the
+                 "call an administrator" alert: short stops stay below its threshold, long stops exceed it)
 """
 
 import os
@@ -39,6 +41,14 @@ EMPTY_FRAME_RATE = float(os.environ.get("SIM_EMPTY_FRAME_RATE", "0.3"))
 MIXED_RECOVERY_SEC = float(os.environ.get("SIM_MIXED_RECOVERY_SEC", "10"))
 # Duration before stopping again after recovery (seconds)
 MIXED_RESTOP_SEC = float(os.environ.get("SIM_MIXED_RESTOP_SEC", "8"))
+
+# --- outage: stop cycle (starts after SIM_STOP_AFTER_SEC, targets SIM_STOP_TOPICS) ---
+# Short stop: long enough to turn the topic red, shorter than the 10s alert threshold (seconds)
+OUTAGE_SHORT_SEC = float(os.environ.get("SIM_OUTAGE_SHORT_SEC", "5"))
+# Long stop: exceeds the 10s alert threshold (seconds)
+OUTAGE_LONG_SEC = float(os.environ.get("SIM_OUTAGE_LONG_SEC", "20"))
+# Publishing period after each stop (seconds)
+OUTAGE_RECOVERY_SEC = float(os.environ.get("SIM_OUTAGE_RECOVERY_SEC", "15"))
 
 # --- burst ---
 # Burst interval (seconds)
