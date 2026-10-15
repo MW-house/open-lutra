@@ -34,6 +34,7 @@ class TopicInfo(BaseModel):
     drop_count: int
     continuity_score: float
     qos_reliability: str
+    silent_sec: float
 
 
 class DiscoveredTopic(BaseModel):

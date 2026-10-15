@@ -39,6 +39,7 @@ def mock_monitor() -> MagicMock:
             drop_count=0,
             continuity_score=1.0,
             qos_reliability="RELIABLE",
+            silent_sec=0.0,
         ),
     ]
     monitor.get_discovered_topics.return_value = [

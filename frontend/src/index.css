@@ -25,6 +25,28 @@
   }
 }
 
+/* Topic-failure alert: a full-screen red wash that flashes so an operator notices it in peripheral vision. */
+@keyframes alert-flash {
+  0%,
+  100% {
+    opacity: 0.3;
+  }
+  50% {
+    opacity: 0.05;
+  }
+}
+
+/* Topic-failure alert card: alternates its background only, keeping the text fully opaque and readable. */
+@keyframes alert-blink {
+  0%,
+  100% {
+    background-color: rgb(220, 38, 38);
+  }
+  50% {
+    background-color: rgb(127, 29, 29);
+  }
+}
+
 @keyframes fade-in {
   from {
     opacity: 0;

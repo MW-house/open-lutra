@@ -18,6 +18,9 @@ from config import (
     EMPTY_FRAME_RATE,
     MIXED_RECOVERY_SEC,
     MIXED_RESTOP_SEC,
+    OUTAGE_LONG_SEC,
+    OUTAGE_RECOVERY_SEC,
+    OUTAGE_SHORT_SEC,
     STOP_AFTER_SEC,
     STOP_TOPICS,
     UNSTABLE_TOPICS,
@@ -66,9 +69,10 @@ class FaultInjector:
     def is_stopped(self, topic_name: str) -> bool:
         """topic_stop mode: whether the topic is currently stopped.
 
-        In mixed mode this repeats a stop → recovery → re-stop cycle.
+        In mixed mode this repeats a stop → recovery → re-stop cycle; in outage mode a
+        short stop → recovery → long stop → recovery cycle.
         """
-        if self._mode not in ("topic_stop", "mixed"):
+        if self._mode not in ("topic_stop", "mixed", "outage"):
             return False
         if topic_name not in STOP_TOPICS:
             return False
@@ -83,6 +87,9 @@ class FaultInjector:
                 self._stop_logged.add(topic_name)
                 self._log("warn", f"[topic_stop] stopped publishing {topic_name}")
             return True
+
+        if self._mode == "outage":
+            return self._is_outage_stopped(topic_name, elapsed - STOP_AFTER_SEC)
 
         cycle_start = elapsed - STOP_AFTER_SEC
         cycle_len = MIXED_RECOVERY_SEC + MIXED_RESTOP_SEC
@@ -100,6 +107,30 @@ class FaultInjector:
                 self._log("info", f"[mixed] publishing of {topic_name} recovered")
 
         return stopped
+
+    def _is_outage_stopped(self, topic_name: str, cycle_elapsed: float) -> bool:
+        """outage mode: whether the topic is in a stop phase of the short/long stop cycle."""
+        cycle_len = OUTAGE_SHORT_SEC + OUTAGE_LONG_SEC + 2 * OUTAGE_RECOVERY_SEC
+        phase = cycle_elapsed % cycle_len
+        if phase < OUTAGE_SHORT_SEC:
+            label = f"short stop ({OUTAGE_SHORT_SEC:.0f}s)"
+        elif phase < OUTAGE_SHORT_SEC + OUTAGE_RECOVERY_SEC:
+            label = None
+        elif phase < OUTAGE_SHORT_SEC + OUTAGE_RECOVERY_SEC + OUTAGE_LONG_SEC:
+            label = f"long stop ({OUTAGE_LONG_SEC:.0f}s)"
+        else:
+            label = None
+
+        key = f"{topic_name}:{label}"
+        if key not in self._stop_logged:
+            # Forget the other phases so each one logs again on the next cycle
+            self._stop_logged = {k for k in self._stop_logged if not k.startswith(f"{topic_name}:")}
+            self._stop_logged.add(key)
+            if label:
+                self._log("warn", f"[outage] {label}: stopped publishing {topic_name}")
+            else:
+                self._log("info", f"[outage] publishing of {topic_name} recovered")
+        return label is not None
 
     # --- camera_empty ---
 

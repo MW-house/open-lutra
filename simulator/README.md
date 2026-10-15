@@ -46,6 +46,7 @@ Switch modes via the `SIM_MODE` environment variable. Set it in `.env` or pass i
 | `camera_empty` | Camera topics keep publishing but some frames are empty (0 bytes) |
 | `burst` | Periodic gap + DDS-burst-style consecutive sends |
 | `mixed` | Combines unstable + topic_stop + camera_empty (closest to real hardware) |
+| `outage` | Repeats short stop → recovery → long stop → recovery on the specified topics (exercises the "call an administrator" alert, see [quality_analysis.md](../docs/domain/quality_analysis.md#call-an-administrator-alert)) |
 
 ### Environment variables
 
@@ -54,8 +55,11 @@ Switch modes via the `SIM_MODE` environment variable. Set it in `.env` or pass i
 | `SIM_MODE` | `normal` | all | Simulation mode |
 | `SIM_DROP_RATE` | `0.1` | unstable, mixed | Message drop rate (0.0-1.0) |
 | `SIM_UNSTABLE_TOPICS` | `all` | unstable, mixed | Topics to drop (`all` for every topic, or a comma-separated list) |
-| `SIM_STOP_AFTER_SEC` | `15` | topic_stop, mixed | Seconds before publishing stops |
-| `SIM_STOP_TOPICS` | `/sim/slave_arm_left,/sim/master_arm_left` | topic_stop, mixed | Topics to stop (comma-separated) |
+| `SIM_STOP_AFTER_SEC` | `15` | topic_stop, mixed, outage | Seconds before publishing stops |
+| `SIM_STOP_TOPICS` | `/sim/slave_arm_left,/sim/master_arm_left` | topic_stop, mixed, outage | Topics to stop (comma-separated) |
+| `SIM_OUTAGE_SHORT_SEC` | `5` | outage | Short stop length (seconds; below the 10s alert threshold) |
+| `SIM_OUTAGE_LONG_SEC` | `20` | outage | Long stop length (seconds; above the 10s alert threshold) |
+| `SIM_OUTAGE_RECOVERY_SEC` | `15` | outage | Publishing period after each stop (seconds) |
 | `SIM_EMPTY_CAMERA_INDICES` | `0` | camera_empty, mixed | Cameras to send empty frames for (0-based indices, comma-separated) |
 | `SIM_EMPTY_FRAME_RATE` | `0.3` | camera_empty, mixed | Empty-frame rate (0.0-1.0) |
 | `SIM_BURST_INTERVAL_SEC` | `10` | burst | Interval between bursts (seconds) |
@@ -73,6 +77,9 @@ SIM_MODE=topic_stop SIM_STOP_AFTER_SEC=10 make restart-sim
 
 # Send empty frames for 50% of chest camera messages
 SIM_MODE=camera_empty SIM_EMPTY_FRAME_RATE=0.5 make restart-sim
+
+# After 15s: 5s stop (red, no alert) → 15s publishing → 20s stop (alert after 10s) → 15s publishing → repeat
+SIM_MODE=outage make restart-sim
 
 # Every 5 seconds: 1s gap → burst of 30 messages
 SIM_MODE=burst SIM_BURST_INTERVAL_SEC=5 SIM_BURST_GAP_SEC=1.0 SIM_BURST_COUNT=30 make restart-sim

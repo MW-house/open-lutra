@@ -398,3 +398,14 @@ During recording, the live monitor (per-topic status dot) uses a separate logic 
 | `ok` | None of the above |
 
 `hz_drop_threshold` is a field on `TopicStats` but currently is not configurable via YAML / env vars (it's hardcoded to the default `0.5`). MCAP post-analysis is IQR + LossEvent based and produces a more detailed judgment.
+
+#### "Call an administrator" alert
+
+A brief `danger` blip is common and does not warrant escalation, so the recorder page raises a red, top-center alert ("管理者を呼んでください") only for a **sustained** outage of a **required** topic (`default_topics`):
+
+| Case | Condition |
+|---|---|
+| Subscribed topic | `silent_sec >= 10` — seconds since the last message, or since monitoring (re)started if none has arrived yet (reported by the backend in `TopicInfo`) |
+| Topic absent from the stream (not discovered on DDS) | Missing for 10s, timed by the frontend |
+
+Topics the operator deselected are not monitored. The alert stays until the operator presses 確認, even if the topic recovers meanwhile (shown as 復旧済み); an acknowledged topic alerts again only after it recovers and fails anew. The 10s threshold is hardcoded (`TOPIC_FAILURE_THRESHOLD_SEC` in `frontend/src/features/live-topics/topic-failure.ts`).

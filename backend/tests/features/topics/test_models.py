@@ -358,6 +358,26 @@ class TestToApi:
         assert info.is_subscribed is True
         assert info.qos_reliability == "RELIABLE"
         assert info.message_count == 50
+        assert info.silent_sec == 0.0
+
+
+class TestSilentSec:
+    """Tests for the silent_sec cache (seconds without a message)."""
+
+    def test_measured_from_last_message(self) -> None:
+        stats = TopicStats(name="/t", msg_type="x", message_count=1, _last_msg_time=100.0, _monitor_started_at=50.0)
+        stats.refresh_cache(112.34)
+        assert stats.to_api().silent_sec == 12.3
+
+    def test_measured_from_monitor_start_before_first_message(self) -> None:
+        stats = TopicStats(name="/t", msg_type="x", _monitor_started_at=100.0)
+        stats.refresh_cache(110.0)
+        assert stats.to_api().silent_sec == 10.0
+
+    def test_zero_without_any_origin(self) -> None:
+        stats = TopicStats(name="/t", msg_type="x")
+        stats.refresh_cache(100.0)
+        assert stats.to_api().silent_sec == 0.0
 
 
 class TestStampBasedQuality:

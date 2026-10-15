@@ -3,7 +3,7 @@
   "info": {
     "title": "OpenLUTRA",
     "description": "ROS2 topic recorder for teleoperation robots (ROS2-standard topics)",
-    "version": "0.5.0"
+    "version": "0.5.1"
   },
   "paths": {
     "/api/recording/start": {
@@ -167,7 +167,7 @@
           "recordings"
         ],
         "summary": "Bulk Update Recording Meta",
-        "description": "Set metadata values on multiple recording folders in one call.\n\nEvery folder is resolved before anything is written, so a missing folder fails the whole request.",
+        "description": "Set metadata values and add / remove tags on multiple recording folders in one call.\n\nEvery folder is resolved before anything is written, so a missing folder fails the whole request.",
         "operationId": "bulkUpdateRecordingMeta",
         "requestBody": {
           "content": {
@@ -729,6 +729,28 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/MemoryInfo"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/system/storage": {
+      "get": {
+        "tags": [
+          "config"
+        ],
+        "summary": "Get Storage",
+        "description": "Get the free space on the volume that holds the recordings.",
+        "operationId": "getStorage",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StorageInfo"
                 }
               }
             }
@@ -1590,15 +1612,30 @@
             "type": "object",
             "title": "Metadata",
             "description": "Pre-registered metadata (key -> value) to set"
+          },
+          "add_tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Add Tags",
+            "description": "Tags to add to every folder (skipped where already present)"
+          },
+          "remove_tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Remove Tags",
+            "description": "Tags to remove from every folder (ignored where absent)"
           }
         },
         "type": "object",
         "required": [
-          "folders",
-          "metadata"
+          "folders"
         ],
         "title": "BulkUpdateMetaRequest",
-        "description": "Request body for PATCH /api/recordings.\n\nEach key in `metadata` is set on every folder; keys not present are left unchanged."
+        "description": "Request body for PATCH /api/recordings.\n\nEach key in `metadata` is set on every folder, `add_tags` are appended where\nmissing and `remove_tags` are dropped where present. Anything not mentioned\nis left unchanged, so a request that mentions nothing is rejected."
       },
       "BulkUpdateMetaResponse": {
         "properties": {
@@ -2803,6 +2840,34 @@
         "title": "RenameResponse",
         "description": "Response for PUT /api/recordings/rename."
       },
+      "StorageInfo": {
+        "properties": {
+          "path": {
+            "type": "string",
+            "title": "Path",
+            "description": "Output directory whose volume was measured"
+          },
+          "free_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Free Bytes",
+            "description": "Bytes still writable by the recorder, excluding the blocks a filesystem reserves for the superuser. null when the volume cannot be inspected."
+          }
+        },
+        "type": "object",
+        "required": [
+          "path",
+          "free_bytes"
+        ],
+        "title": "StorageInfo",
+        "description": "Response for GET /api/system/storage."
+      },
       "SubscriptionRequest": {
         "properties": {
           "topics": {
@@ -3102,6 +3167,10 @@
           "qos_reliability": {
             "type": "string",
             "title": "Qos Reliability"
+          },
+          "silent_sec": {
+            "type": "number",
+            "title": "Silent Sec"
           }
         },
         "type": "object",
@@ -3117,7 +3186,8 @@
           "loss_rate",
           "drop_count",
           "continuity_score",
-          "qos_reliability"
+          "qos_reliability",
+          "silent_sec"
         ],
         "title": "TopicInfo",
         "description": "Information about a monitored topic."

@@ -3,18 +3,24 @@
  * Do not edit manually.
  * OpenLUTRA
  * ROS2 topic recorder for teleoperation robots (ROS2-standard topics)
- * OpenAPI spec version: 0.5.0
+ * OpenAPI spec version: 0.5.1
  */
 import type { BulkUpdateMetaRequestMetadata } from './bulkUpdateMetaRequestMetadata.ts';
 
 /**
  * Request body for PATCH /api/recordings.
  *
- * Each key in `metadata` is set on every folder; keys not present are left unchanged.
+ * Each key in `metadata` is set on every folder, `add_tags` are appended where
+ * missing and `remove_tags` are dropped where present. Anything not mentioned
+ * is left unchanged, so a request that mentions nothing is rejected.
  */
 export interface BulkUpdateMetaRequest {
   /** Names of recording folders to update */
   folders: string[];
   /** Pre-registered metadata (key -> value) to set */
-  metadata: BulkUpdateMetaRequestMetadata;
+  metadata?: BulkUpdateMetaRequestMetadata;
+  /** Tags to add to every folder (skipped where already present) */
+  add_tags?: string[];
+  /** Tags to remove from every folder (ignored where absent) */
+  remove_tags?: string[];
 }

@@ -461,6 +461,24 @@ class TestPauseResume:
         assert stats.message_count == 0
         assert stats.loss_rate == 0.0
 
+    def test_silent_sec_counts_from_subscription_and_restarts_on_resume(
+        self, monitor: TopicMonitorService, mock_subscriber: MagicMock
+    ) -> None:
+        """silent_sec runs from subscription until the first message, and restarts from resume."""
+        mock_subscriber.discover_topics.return_value = [
+            ("/joint_states", ["sensor_msgs/msg/JointState"]),
+        ]
+        clock = [100.0]
+        with patch("app.features.topics.service.time.monotonic", side_effect=lambda: clock[0]):
+            monitor.on_discover_tick()
+            clock[0] = 112.0
+            assert monitor.get_topic_stats()[0].silent_sec == 12.0
+
+            monitor.pause()
+            monitor.resume()
+            clock[0] = 115.0
+            assert monitor.get_topic_stats()[0].silent_sec == 3.0
+
     def test_pause_logs(self, monitor: TopicMonitorService, log_manager: LogManager) -> None:
         """A log entry is written on pause."""
         monitor.pause()

@@ -42,6 +42,7 @@ export function TopicList() {
       drop_count: 0,
       continuity_score: 1,
       qos_reliability: "",
+      silent_sec: 0,
     }));
     return {
       allTopics: [...topicStats, ...placeholders] as TopicInfo[],
