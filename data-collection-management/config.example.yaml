@@ -1,0 +1,11 @@
+# Settings for the data-collection-management app.
+# Copy to config.yaml and adjust the two paths below.
+# Relative paths are resolved against the directory holding this file.
+
+# Directory that holds one sub-directory per recording
+# (each containing recording_meta.json / metadata.yaml).
+output_dir: ../open-lutra/output
+
+# Recording config of the robot that produced the data. Its `metadata_fields`
+# section is the master used to resolve metadata ids into "{id}_{label}".
+recording_config_path: ../open-lutra/config/simulator.yaml
